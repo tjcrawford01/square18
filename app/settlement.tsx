@@ -1,15 +1,17 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Alert, Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRoundStore } from '../src/store/roundStore';
-import { ASPETUCK, getTeeOrDefault } from '../src/data/aspetuck';
+import { useCourseStore } from '../src/store/courseStore';
+import { getTeeOrDefault, getHolesForTee } from '../src/types/course';
 import { SIDE_BET_TYPES } from '../src/data/sideBetTypes';
-import { courseHandicap } from '../src/engine/handicap';
+import { courseHandicap, playingHandicaps } from '../src/engine/handicap';
 import { computeMatchSettlement } from '../src/engine/matchPlay';
 import { computeSkins } from '../src/engine/skins';
+import { computeFiveThreeOne, fiveThreeOneSettlement } from '../src/engine/fiveThreeOne';
 import { countBirdies } from '../src/engine/birdies';
 import { computeSideBetNet } from '../src/engine/sideBets';
-import { buildSettlementText, venmoDeepLink, venmoLink, iMessageLink } from '../src/engine/settlement';
+import { buildSettlementText, buildScorecardShareText, minTransactions, venmoDeepLink, venmoLink, iMessageLink } from '../src/engine/settlement';
 import { Card } from '../src/components/Card';
 import { SectionLabel } from '../src/components/SectionLabel';
 import { Colors } from '../src/theme/colors';
@@ -17,16 +19,24 @@ import { Colors } from '../src/theme/colors';
 export default function SettlementScreen() {
   const router = useRouter();
   const { round, sideBetWinners, setSideBetWinner, resetRound } = useRoundStore();
+  const selectedCourse = useCourseStore((s) => s.selectedCourse);
 
-  const tee = getTeeOrDefault(round.tee);
-  const holes = tee.holes;
+  const tee = getTeeOrDefault(selectedCourse, round.tee);
+  const allHoles = getHolesForTee(selectedCourse, round.tee);
+  const numHoles = round.numHoles ?? '18';
+  const firstHole = numHoles === 'back9' ? 10 : 1;
+  const lastHole = numHoles === 'front9' ? 9 : 18;
+  const holes = allHoles.filter((h) => h.hole >= firstHole && h.hole <= lastHole);
   const isMatchPlay = round.gameStyle === 'matchplay';
+  const is531 = round.gameStyle === 'fivethreeone';
 
-  const hcps: Record<number, number> = {};
-  round.players.forEach((p) => {
-    const raw = courseHandicap(p.index ?? 0, tee);
-    hcps[p.id] = isMatchPlay ? Math.round(raw * 0.85) : raw;
-  });
+  const courseHcps: Record<number, number> = {};
+  if (tee) {
+    round.players.forEach((p) => {
+      courseHcps[p.id] = courseHandicap(p.index ?? 0, tee);
+    });
+  }
+  const hcps = playingHandicaps(courseHcps, isMatchPlay);
 
   const t1 = round.teams[0].playerIds;
   const t2 = round.teams[1].playerIds;
@@ -37,17 +47,29 @@ export default function SettlementScreen() {
       .join(' & ');
 
   const settlement = isMatchPlay
-    ? computeMatchSettlement(round.scores, hcps, t1, t2, round.stakes, round.autoPress, round.pressAt, holes)
+    ? computeMatchSettlement(round.scores, hcps, t1, t2, round.stakes, round.autoPress, round.pressAt, allHoles, numHoles)
     : null;
 
-  const skinResults = !isMatchPlay ? computeSkins(round.scores, hcps, round.players.map((p) => p.id), holes) : [];
+  const skinResults = !isMatchPlay && !is531 ? computeSkins(round.scores, hcps, round.players.map((p) => p.id), holes) : [];
   const skinsWon: Record<number, number> = {};
   round.players.forEach((p) => (skinsWon[p.id] = 0));
   skinResults.forEach((r) => {
     if (r.winner != null) skinsWon[r.winner] = (skinsWon[r.winner] ?? 0) + (r.skinsWon ?? 0);
   });
   const perSkin = round.skinValue * round.players.length;
-  const skinsSettlement = !isMatchPlay ? { skinResults, skinsWon, perSkin } : null;
+  const skinsSettlement = !isMatchPlay && !is531 ? { skinResults, skinsWon, perSkin } : null;
+
+  const five31Results = is531 && round.players.length === 3
+    ? computeFiveThreeOne(round.scores, hcps, round.players.map((p) => p.id), holes)
+    : [];
+  const five31Settlement =
+    five31Results.length === 3 && round.five31Mode != null && round.five31Value != null
+      ? fiveThreeOneSettlement(
+          five31Results,
+          round.five31Mode,
+          round.five31Value
+        )
+      : [];
 
   const birdiePool = round.sideBets.find((sb) => sb.type === 'birdie');
   const birdieCounts = birdiePool ? countBirdies(round.scores, round.players.map((p) => p.id), holes) : null;
@@ -75,6 +97,13 @@ export default function SettlementScreen() {
     round.players.forEach((p) => {
       netPerPlayer[p.id] = Math.round(matchContrib[p.id] + (sbNet[p.id] ?? 0));
     });
+  } else if (is531 && five31Settlement.length > 0) {
+    five31Settlement.forEach((r) => {
+      netPerPlayer[r.playerId] = r.net + Math.round(sbNet[r.playerId] ?? 0);
+    });
+    round.players.forEach((p) => {
+      if (netPerPlayer[p.id] == null) netPerPlayer[p.id] = Math.round(sbNet[p.id] ?? 0);
+    });
   } else if (skinsSettlement) {
     const totalSkins = skinsSettlement.skinResults.reduce((s, r) => s + (r.skinsWon ?? 0), 0);
     const totalPot = totalSkins * perSkin;
@@ -89,7 +118,7 @@ export default function SettlementScreen() {
   }
 
   const msgText = buildSettlementText(
-    round,
+    { ...round, courseName: selectedCourse?.name ?? 'Course' },
     settlement,
     skinsSettlement,
     sideBetWinners as Record<string | number, number | undefined>,
@@ -98,6 +127,7 @@ export default function SettlementScreen() {
       matchContrib,
       sbNet,
       birdieCounts: birdieCounts ?? undefined,
+      five31Results: is531 ? five31Results : undefined,
     }
   );
 
@@ -128,31 +158,77 @@ export default function SettlementScreen() {
   };
   const openiMessage = () => Linking.openURL(iMessageLink(msgText));
 
+  const shareScorecard = () => {
+    const message = buildScorecardShareText({
+      round: { tee: round.tee, gameStyle: round.gameStyle },
+      courseName: selectedCourse?.name ?? 'Course',
+      players: round.players,
+      scores: round.scores,
+      hcps,
+      holes,
+    });
+    Share.share({ message, title: 'Scorecard' });
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.hero}>
         <Text style={styles.heroEmoji}>⛳</Text>
         <Text style={styles.heroTitle}>You're Square.</Text>
         <Text style={styles.heroSub}>
-          {ASPETUCK.name} · {round.tee} tees · {isMatchPlay ? 'Match Play' : 'Skins'}
+          {selectedCourse?.name ?? 'Course'} · {round.tee} tees · {isMatchPlay ? 'Match Play' : is531 ? '5-3-1' : 'Skins'}
         </Text>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        <Pressable style={styles.shareScorecardBtn} onPress={shareScorecard}>
+          <Text style={styles.shareScorecardBtnText}>Share Scorecard</Text>
+        </Pressable>
         <View style={styles.scorekeeperNote}>
           <Text style={styles.scorekeeperNoteText}>
             You're the scorekeeper. Use the breakdown below and Venmo buttons to request payment from others, or send the group text so everyone sees the totals.
           </Text>
         </View>
+        {is531 && five31Results.length === 3 && (
+          <>
+            <SectionLabel>5-3-1 Results</SectionLabel>
+            <Card accent={Colors.forest} style={styles.card}>
+              {five31Results
+                .slice()
+                .sort((a, b) => b.points - a.points)
+                .map((r, i) => {
+                  const player = round.players.find((p) => p.id === r.playerId);
+                  if (!player) return null;
+                  const medals = ['🥇', '🥈', '🥉'];
+                  return (
+                    <View key={r.playerId} style={styles.skinRow}>
+                      <View style={styles.skinLeft}>
+                        <Text>{medals[i]}</Text>
+                        <Text style={styles.skinName}>{player.name}</Text>
+                      </View>
+                      <Text style={styles.five31Pts}>{r.points} pts</Text>
+                    </View>
+                  );
+                })}
+            </Card>
+          </>
+        )}
+
         {isMatchPlay && settlement && (
           <>
             <SectionLabel>Match Results</SectionLabel>
             <Card accent={Colors.forest} style={styles.card}>
-              {[
-                ['Front 9', settlement.front.result, settlement.fAmt],
-                ['Back 9', settlement.back.result, settlement.bAmt],
-                ['Overall', settlement.total.result, settlement.tAmt],
-              ].map(([label, result, amt]) => (
+              {(
+                numHoles === 'front9'
+                  ? [['Front 9', settlement.front.result, settlement.fAmt]]
+                  : numHoles === 'back9'
+                    ? [['Back 9', settlement.back.result, settlement.bAmt]]
+                    : [
+                        ['Front 9', settlement.front.result, settlement.fAmt],
+                        ['Back 9', settlement.back.result, settlement.bAmt],
+                        ['Overall', settlement.total.result, settlement.tAmt],
+                      ]
+              ).map(([label, result, amt]) => (
                 <View key={String(label)} style={styles.resultRow}>
                   <Text style={styles.resultLabel}>{label}</Text>
                   <Text style={[styles.resultMid, result === 0 && styles.resultTied, result > 0 && styles.resultWin, result < 0 && styles.resultLose]}>
@@ -265,7 +341,7 @@ export default function SettlementScreen() {
                               <Pressable
                                 key={payer.id}
                                 style={styles.venmoBtnFull}
-                                onPress={() => openVenmo(venmoLink(birdieWinner!.venmo, sb.amount, `Square18 Birdie Pool @${ASPETUCK.name}`))}
+                                onPress={() => openVenmo(venmoLink(birdieWinner!.venmo, sb.amount, `Square18 Birdie Pool @${selectedCourse?.name ?? 'Course'}`))}
                               >
                                 <Text style={styles.venmoBtnText}>{payer.name} → Pay {birdieWinner!.name} ${sb.amount}</Text>
                               </Pressable>
@@ -281,7 +357,7 @@ export default function SettlementScreen() {
                                 <Pressable
                                   key={`${payer.id}-${winner.id}`}
                                   style={styles.venmoBtnFull}
-                                  onPress={() => openVenmo(venmoLink(winner.venmo, sb.amount, `Square18 Birdie Pool @${ASPETUCK.name}`))}
+                                  onPress={() => openVenmo(venmoLink(winner.venmo, sb.amount, `Square18 Birdie Pool @${selectedCourse?.name ?? 'Course'}`))}
                                 >
                                   <Text style={styles.venmoBtnText}>{payer.name} → Pay {winner.name} ${sb.amount}</Text>
                                 </Pressable>
@@ -314,7 +390,7 @@ export default function SettlementScreen() {
                               <Pressable
                                 key={payer.id}
                                 style={styles.venmoBtnFull}
-                                onPress={() => openVenmo(venmoLink(effectiveWinner.venmo, sb.amount, `Square18 ${type?.label} @${ASPETUCK.name}`))}
+                                onPress={() => openVenmo(venmoLink(effectiveWinner.venmo, sb.amount, `Square18 ${type?.label} @${selectedCourse?.name ?? 'Course'}`))}
                               >
                                 <Text style={styles.venmoBtnText}>{payer.name} → Pay {effectiveWinner.name} ${sb.amount}</Text>
                               </Pressable>
@@ -333,55 +409,77 @@ export default function SettlementScreen() {
         )}
 
         <SectionLabel>Settle Up</SectionLabel>
+        <View style={styles.settleUpNote}>
+          <Text style={styles.settleUpNoteText}>
+            Amounts below are each player's final net (match/game + all side bets combined).
+          </Text>
+        </View>
         {(() => {
-          const othersWithNet = round.players.filter(
-            (p) => p.id !== scorekeeperId && (netPerPlayer[p.id] ?? 0) !== 0
+          const transactions = minTransactions(netPerPlayer);
+          const note = `Square18 @${selectedCourse?.name ?? 'Course'}`;
+          const scorekeeperTx = transactions.filter(
+            (t) => t.fromId === scorekeeperId || t.toId === scorekeeperId
           );
-          if (othersWithNet.length === 0) {
+          const otherTx = transactions.filter(
+            (t) => t.fromId !== scorekeeperId && t.toId !== scorekeeperId
+          );
+          if (transactions.length === 0) {
             return (
               <Card accent={Colors.grayLight}>
-                <Text style={styles.evenText}>Everyone is even with you.</Text>
+                <Text style={styles.evenText}>Everyone is square. 🤝</Text>
               </Card>
             );
           }
-          const note = `Square18 @${ASPETUCK.name}`;
-          return othersWithNet.map((p) => {
-            const net = netPerPlayer[p.id] ?? 0;
-            const amount = Math.abs(net);
-            const owesYou = net < 0;
-            return (
-              <Card
-                key={p.id}
-                accent={owesYou ? Colors.redLight : Colors.forest}
-                style={styles.settleCard}
-              >
-                <View style={styles.settleHeader}>
-                  <Text style={styles.payerName}>
-                    {owesYou ? `${p.name} owes you $${amount}` : `You owe ${p.name} $${amount}`}
-                  </Text>
-                  <Text style={styles.owesSub}>match + side bets</Text>
-                </View>
-                <Pressable
-                  style={styles.venmoBtn}
-                  onPress={() =>
-                    openVenmo(
-                      venmoDeepLink(
-                        p.venmo,
-                        amount,
-                        note,
-                        owesYou ? 'request' : 'pay'
-                      )
-                    )
-                  }
-                >
-                  <Text style={styles.venmoBtnText}>
-                    {owesYou ? `Request $${amount} from ${p.name}` : `Pay ${p.name} $${amount}`}
-                  </Text>
-                  <Text style={styles.venmoBtnAmt}>${amount}</Text>
-                </Pressable>
-              </Card>
-            );
-          });
+          const getPlayer = (id: number) => round.players.find((p) => p.id === id);
+          return (
+            <>
+              {scorekeeperTx.map((t, i) => {
+                const otherId = t.fromId === scorekeeperId ? t.toId : t.fromId;
+                const owesYou = t.toId === scorekeeperId;
+                const other = getPlayer(otherId);
+                if (!other) return null;
+                return (
+                  <Card
+                    key={`sk-${i}`}
+                    accent={owesYou ? Colors.redLight : Colors.forest}
+                    style={styles.settleCard}
+                  >
+                    <View style={styles.settleHeader}>
+                      <Text style={styles.payerName}>
+                        {owesYou ? `${other.name} owes You $${t.amount}` : `You owe ${other.name} $${t.amount}`}
+                      </Text>
+                    </View>
+                    <Pressable
+                      style={styles.venmoBtn}
+                      onPress={() =>
+                        openVenmo(
+                          venmoDeepLink(other.venmo, t.amount, note, owesYou ? 'request' : 'pay')
+                        )
+                      }
+                    >
+                      <Text style={styles.venmoBtnText}>
+                        {owesYou ? `Request $${t.amount} from ${other.name}` : `Pay ${other.name} $${t.amount}`}
+                      </Text>
+                    </Pressable>
+                  </Card>
+                );
+              })}
+              {otherTx.length > 0 && (
+                <Card style={styles.settleCard}>
+                  {otherTx.map((t, i) => {
+                    const from = getPlayer(t.fromId);
+                    const to = getPlayer(t.toId);
+                    if (!from || !to) return null;
+                    return (
+                      <Text key={i} style={styles.otherDebtText}>
+                        {from.name} owes {to.name} ${t.amount}
+                      </Text>
+                    );
+                  })}
+                </Card>
+              )}
+            </>
+          );
         })()}
 
         <View style={styles.sendSection}>
@@ -418,6 +516,15 @@ const styles = StyleSheet.create({
   heroSub: { color: Colors.rough, fontSize: 12, marginTop: 6 },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 32 },
+  shareScorecardBtn: {
+    marginBottom: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.forest,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  shareScorecardBtnText: { fontSize: 14, fontWeight: '700', color: Colors.cream },
   scorekeeperNote: {
     backgroundColor: Colors.parchment,
     borderRadius: 8,
@@ -444,11 +551,21 @@ const styles = StyleSheet.create({
   netLabel: { fontWeight: '700', fontSize: 15 },
   netAmt: { color: Colors.gold, fontWeight: '700', fontSize: 22 },
   evenText: { textAlign: 'center', color: Colors.gray, fontSize: 14 },
+  settleUpNote: {
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  settleUpNoteText: {
+    fontSize: 12,
+    color: Colors.gray,
+    fontStyle: 'italic',
+  },
   settleCard: { marginBottom: 12 },
   settleHeader: { marginBottom: 10 },
   payerName: { fontWeight: '700', fontSize: 15 },
   owes: { color: Colors.red, fontSize: 18, fontWeight: '700' },
   owesSub: { color: Colors.gray, fontSize: 11, marginTop: 2 },
+  otherDebtText: { fontSize: 14, color: Colors.ink, marginBottom: 4 },
   venmoRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   venmoBtn: { flex: 1, minWidth: 80, backgroundColor: Colors.blue, borderRadius: 8, padding: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: '#0f2a5a' },
   venmoBtnText: { color: Colors.cream, fontSize: 13, fontWeight: '700' },
@@ -462,6 +579,7 @@ const styles = StyleSheet.create({
   skinCount: { color: Colors.gray, fontSize: 12 },
   skinAmt: { fontSize: 18, fontWeight: '700', color: Colors.gray },
   skinAmtGreen: { color: Colors.forest },
+  five31Pts: { fontSize: 18, fontWeight: '700', color: Colors.forest },
   holeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 6, marginBottom: 6, borderBottomWidth: 1, borderBottomColor: Colors.grayLight },
   holeLabel: { color: Colors.gray, fontSize: 12, minWidth: 56 },
   holeMid: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '700' },

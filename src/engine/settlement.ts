@@ -1,7 +1,8 @@
-import { ASPETUCK } from '../data/aspetuck';
+import type { HoleInfo } from '../types/course';
 import { SIDE_BET_TYPES } from '../data/sideBetTypes';
 import type { MatchSettlement } from './matchPlay';
 import type { SkinResult } from './skins';
+import { strokesOnHole } from './handicap';
 
 function stripHandle(handle: string | undefined): string {
   return handle?.replace(/^@/, '') || '';
@@ -35,7 +36,7 @@ export function iMessageLink(body: string): string {
 
 export interface SettlementRoundLike {
   tee: string;
-  gameStyle: 'matchplay' | 'skins';
+  gameStyle: 'matchplay' | 'skins' | 'fivethreeone';
   players: { id: number; name: string; initials: string; venmo?: string }[];
   teams: { id: number; playerIds: number[] }[];
   stakes: { front: number; back: number; total: number };
@@ -49,11 +50,50 @@ export interface SkinsSettlementSummary {
   perSkin: number;
 }
 
+export interface Five31ResultLike {
+  playerId: number;
+  points: number;
+}
+
 export interface SettlementTextOptions {
   netPerPlayer: Record<number, number>;
   matchContrib?: Record<number, number>;
   sbNet?: Record<number, number>;
   birdieCounts?: Record<number, number>;
+  five31Results?: Five31ResultLike[];
+}
+
+/** One transfer: fromId owes toId amount (rounded whole dollars). */
+export interface SettlementTransaction {
+  fromId: number;
+  toId: number;
+  amount: number;
+}
+
+/**
+ * Reduce net positions to minimum number of transactions (greedy: match largest creditor with largest debtor).
+ * netPerPlayer: positive = collects, negative = owes.
+ */
+export function minTransactions(netPerPlayer: Record<number, number>): SettlementTransaction[] {
+  const ids = Object.keys(netPerPlayer).map(Number);
+  const nets = ids.map((id) => Math.round(netPerPlayer[id] ?? 0));
+  const out: SettlementTransaction[] = [];
+  const creditors = ids.map((id, i) => ({ id, net: nets[i]! })).filter((x) => x.net > 0);
+  const debtors = ids.map((id, i) => ({ id, net: -nets[i]! })).filter((x) => x.net > 0);
+  while (creditors.length > 0 && debtors.length > 0) {
+    creditors.sort((a, b) => b.net - a.net);
+    debtors.sort((a, b) => b.net - a.net);
+    const c = creditors[0]!;
+    const d = debtors[0]!;
+    const amount = Math.min(c.net, d.net);
+    if (amount <= 0) break;
+    out.push({ fromId: d.id, toId: c.id, amount });
+    c.net -= amount;
+    d.net -= amount;
+    if (c.net <= 0) creditors.shift();
+    if (d.net <= 0) debtors.shift();
+  }
+  return out;
 }
 
 function teamName(round: SettlementRoundLike, teamPlayerIds: number[], scorekeeperId: number): string {
@@ -79,39 +119,52 @@ export function buildSettlementText(
   const matchContrib = options.matchContrib ?? {};
   const sbNet = options.sbNet ?? {};
   const birdieCounts = options.birdieCounts ?? {};
-
+  const five31Results = options.five31Results ?? [];
+  const gameLabel =
+    round.gameStyle === 'matchplay' ? 'Match Play' : round.gameStyle === 'fivethreeone' ? '5-3-1' : 'Skins';
+  const courseName = round.courseName || 'Course';
   const lines: string[] = [
-    `⛳ Square18 — ${ASPETUCK.name}`,
-    `${round.tee} tees · ${round.gameStyle === 'matchplay' ? 'Match Play' : 'Skins'}${round.players.length === 2 ? ' · 1v1' : ''}`,
+    `⛳ Square18 — ${courseName}`,
+    `${round.tee} tees · ${gameLabel}${round.players.length === 2 && round.gameStyle === 'matchplay' ? ' · 1v1' : ''}`,
     '',
   ];
+
+  if (round.gameStyle === 'fivethreeone' && five31Results.length > 0) {
+    five31Results
+      .slice()
+      .sort((a, b) => b.points - a.points)
+      .forEach((r) => {
+        const p = round.players.find((x) => x.id === r.playerId);
+        const name = p && p.id === scorekeeperId ? 'YOU' : p?.name?.toUpperCase() ?? '';
+        lines.push(`${name}:   ${r.points} pts`);
+      });
+    lines.push('');
+  }
 
   if (round.gameStyle === 'matchplay' && settlement) {
     const t1 = teamName(round, round.teams[0].playerIds, scorekeeperId);
     const t2 = teamName(round, round.teams[1].playerIds, scorekeeperId);
     lines.push(`${t1} vs ${t2}`);
     lines.push('');
+    const frontWinner =
+      settlement.front.result > 0 ? t1 : settlement.front.result < 0 ? t2 : 'Tied';
+    const backWinner =
+      settlement.back.result > 0 ? t1 : settlement.back.result < 0 ? t2 : 'Tied';
+    const totalWinner =
+      settlement.total.result > 0 ? t1 : settlement.total.result < 0 ? t2 : 'Tied';
     lines.push(
-      `Front 9:  ${settlement.front.result > 0 ? t1 : settlement.front.result < 0 ? t2 : 'Tied'} win${settlement.front.result !== 0 ? `  ($${Math.abs(settlement.fAmt)})` : '   ($0)'}`,
+      `Front 9:  ${frontWinner}${frontWinner === 'Tied' ? '      ' : ' win   '} ($${settlement.front.result !== 0 ? Math.abs(settlement.fAmt) : 0})`,
     );
     lines.push(
-      `Back 9:   ${settlement.back.result > 0 ? t1 : settlement.back.result < 0 ? t2 : 'Tied'}${settlement.back.result !== 0 ? `  ($${Math.abs(settlement.bAmt)})` : '      ($0)'}`,
+      `Back 9:   ${backWinner === 'Tied' ? 'Tied      ' : backWinner + '   '} ($${settlement.back.result !== 0 ? Math.abs(settlement.bAmt) : 0})`,
     );
     lines.push(
-      `Overall:  ${settlement.total.result > 0 ? t1 : settlement.total.result < 0 ? t2 : 'Tied'}${settlement.total.result !== 0 ? `  ($${Math.abs(settlement.tAmt)})` : '      ($0)'}`,
+      `Overall:  ${totalWinner === 'Tied' ? 'Tied      ' : totalWinner + '   '} ($${settlement.total.result !== 0 ? Math.abs(settlement.tAmt) : 0})`,
     );
     settlement.pressDetails.forEach((p) => {
       const winner = p.result > 0 ? t1 : p.result < 0 ? t2 : 'Tied';
-      lines.push(`🔁 Press H${p.startHole}:  ${winner}  ($${Math.abs(p.amt)})`);
+      lines.push(`🔁 Press H${p.startHole}-${p.endHole ?? p.startHole}: ${winner} ($${Math.abs(p.amt)})`);
     });
-    const net = Math.abs(settlement.net);
-    const teamSize = round.teams[0].playerIds.length;
-    const netLine =
-      settlement.net === 0
-        ? 'All square'
-        : `${settlement.net > 0 ? t2 : t1} owe${teamSize === 1 ? 's' : ''} ${settlement.net > 0 ? t1 : t2} $${net} total${teamSize > 1 ? ` ($${Math.round(net / teamSize)} each)` : ''}`;
-    lines.push('');
-    lines.push(`NET: ${netLine}`);
   }
 
   if (round.gameStyle === 'skins' && skinsSettlement) {
@@ -158,29 +211,111 @@ export function buildSettlementText(
   }
 
   lines.push('─────────────────────────');
-  lines.push('SETTLE UP');
+  lines.push('SETTLE UP (match + side bets = one number per player)');
   lines.push('');
   round.players.forEach((p) => {
     const net = Math.round(netPerPlayer[p.id] ?? 0);
     const name = p.id === scorekeeperId ? 'You' : p.name;
-    const m = Math.round(matchContrib[p.id] ?? 0);
-    const s = Math.round(sbNet[p.id] ?? 0);
-    let breakdown = '';
-    if (round.gameStyle === 'matchplay' && (m !== 0 || s !== 0)) {
-      const parts: string[] = [];
-      if (m !== 0) parts.push(`(match) $${m}`);
-      if (s !== 0) parts.push(`(side bets) ${s > 0 ? '+' : ''}$${s}`);
-      breakdown = ` ${parts.join(' + ')} = `;
-    }
-    const owesOrCollects = net >= 0 ? 'collects' : 'owes';
-    const netStr = `$${Math.abs(net)} net`;
-    const link = p.venmo ? ` → ${venmoWebLink(p.venmo)}` : '';
-    lines.push(`${name}  ${owesOrCollects}${breakdown}${netStr}${link}`);
+    const line = net >= 0 ? `${name}: +$${net}` : `${name}: -$${Math.abs(net)}`;
+    lines.push(line);
   });
-
   lines.push('');
+  lines.push('Pay these amounts (min transfers):');
+  lines.push('');
+  const transactions = minTransactions(netPerPlayer);
+  if (transactions.length === 0) {
+    lines.push('Everyone is square. 🤝');
+  } else {
+    transactions.forEach((tx) => {
+      const fromName = round.players.find((x) => x.id === tx.fromId);
+      const toName = round.players.find((x) => x.id === tx.toId);
+      const fromLabel = fromName && fromName.id === scorekeeperId ? 'You' : fromName?.name ?? '';
+      const toLabel = toName && toName.id === scorekeeperId ? 'You' : toName?.name ?? '';
+      const venmoHandle = toName?.venmo ? (toName.venmo.startsWith('@') ? toName.venmo : `@${toName.venmo}`) : '';
+      const actionLine = venmoHandle
+        ? `${fromLabel} pay ${toLabel} $${tx.amount} (Venmo: ${venmoHandle})`
+        : `${fromLabel} pay ${toLabel} $${tx.amount}`;
+      lines.push(actionLine);
+      if (toName?.venmo) lines.push(`→ ${venmoWebLink(toName.venmo)}`);
+      lines.push('');
+    });
+  }
+
   lines.push('─────────────────────────');
   lines.push('Powered by Square18');
+  return lines.join('\n');
+}
+
+/** Format date for scorecard share: "Mon Mar 4, 2026" */
+function scorecardDate(): string {
+  return new Date().toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+export interface ScorecardShareInput {
+  round: { tee: string; gameStyle: string };
+  courseName: string;
+  players: { id: number; name: string }[];
+  scores: Record<number, Record<number, number>>;
+  hcps: Record<number, number>;
+  holes: HoleInfo[];
+}
+
+/** Plain-text scorecard for Share API. ● after score on stroke holes. */
+export function buildScorecardShareText(input: ScorecardShareInput): string {
+  const { round, players, scores, hcps, holes } = input;
+  const gameLabel =
+    round.gameStyle === 'matchplay' ? 'Match Play' : round.gameStyle === 'fivethreeone' ? '5-3-1' : 'Skins';
+  const dateStr = scorecardDate();
+  const courseName = input.courseName ?? 'Course';
+  const headerNames = ['PAR', ...players.map((p) => (p.id === players[0].id ? 'YOU' : p.name.toUpperCase()))];
+  const colWidths = [4, 5, ...players.map(() => 5)];
+  const pad = (s: string, i: number) => s.padStart(colWidths[i] ?? 5);
+
+  const lines: string[] = [
+    `⛳ ${courseName} — ${dateStr}`,
+    `${round.tee} Tees · ${gameLabel}`,
+    '',
+    '       ' + headerNames.map((h, i) => pad(h, i)).join('  '),
+  ];
+
+  const addHoleRow = (h: HoleInfo) => {
+    const par = h.par;
+    const cells = [par, ...players.map((pid) => scores[pid.id]?.[h.hole])];
+    const display = cells.map((c, i) => {
+      if (i === 0) return String(par);
+      const gross = c as number | undefined;
+      const stroke = gross != null && strokesOnHole(hcps[players[i - 1].id] ?? 0, h.si) > 0;
+      return gross != null ? `${gross}${stroke ? '●' : ''}` : '—';
+    });
+    const row = `H${h.hole}     `.slice(0, 7) + display.map((d, i) => pad(String(d), i)).join('  ');
+    lines.push(row);
+  };
+
+  holes.slice(0, 9).forEach(addHoleRow);
+  const outPars = holes.slice(0, 9).reduce((s, h) => s + h.par, 0);
+  const outTotals = players.map((p) =>
+    holes.slice(0, 9).reduce((s, h) => s + (scores[p.id]?.[h.hole] ?? 0), 0)
+  );
+  lines.push('OUT    ' + [outPars, ...outTotals].map((v, i) => pad(String(v), i)).join('  '));
+  lines.push('');
+
+  holes.slice(9, 18).forEach(addHoleRow);
+  const inPars = holes.slice(9, 18).reduce((s, h) => s + h.par, 0);
+  const inTotals = players.map((p) =>
+    holes.slice(9, 18).reduce((s, h) => s + (scores[p.id]?.[h.hole] ?? 0), 0)
+  );
+  lines.push('IN     ' + [inPars, ...inTotals].map((v, i) => pad(String(v), i)).join('  '));
+  lines.push('');
+
+  const totalPar = outPars + inPars;
+  const totalScores = players.map((p, i) => (outTotals[i] ?? 0) + (inTotals[i] ?? 0));
+  lines.push('TOTAL  ' + [totalPar, ...totalScores].map((v, i) => pad(String(v), i)).join('  '));
+
   return lines.join('\n');
 }
 

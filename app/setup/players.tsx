@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRoundStore } from '../../src/store/roundStore';
 import { NavBar } from '../../src/components/NavBar';
@@ -56,9 +56,13 @@ export default function PlayersScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
       <NavBar title="Players & Handicaps" subtitle="Step 1 of 3" onBack={() => router.back()} />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <SectionLabel>Who's playing?</SectionLabel>
         {players.map((p, i) => (
           <Card key={p.id} accent={editing === p.id ? Colors.gold : Colors.grayLight}>
@@ -152,7 +156,7 @@ export default function PlayersScreen() {
       <View style={styles.footer}>
         <PrimaryBtn label="Choose Game →" onPress={() => router.push('/setup/game')} />
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

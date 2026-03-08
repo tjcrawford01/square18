@@ -3,19 +3,23 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
+    "start": "npx expo start",
+    "android": "npx expo start --android",
+    "ios": "node node_modules/expo/bin/cli start --ios",
+    "web": "npx expo start --web",
     "build:ios": "npx eas-cli build --platform ios --profile preview",
+    "build:ios:no-git": "EAS_NO_VCS=1 npx eas-cli build --platform ios --profile preview",
     "build:android": "npx eas-cli build --platform android --profile preview",
     "build:all": "npx eas-cli build --platform all --profile preview"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "dotenv": "^17.3.1",
     "expo": "~55.0.4",
+    "expo-constants": "^55.0.7",
     "expo-font": "~55.0.4",
     "expo-linking": "~55.0.7",
+    "expo-location": "^55.1.2",
     "expo-router": "~55.0.3",
     "expo-status-bar": "~55.0.4",
     "react": "^19.2.4",
@@ -25,8 +29,13 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@expo/metro-runtime": "~5.0.4",
     "@types/react": "~19.2.2",
+    "eas-cli": "^15.0.0",
     "typescript": "~5.9.2"
+  },
+  "engines": {
+    "node": ">=18 <=22"
   },
   "private": true
 }

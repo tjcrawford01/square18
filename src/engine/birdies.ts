@@ -1,4 +1,4 @@
-import type { HoleInfo } from '../data/aspetuck';
+import type { HoleInfo } from '../types/course';
 import type { Scores } from './matchPlay';
 
 export function countBirdies(scores: Scores, playerIds: number[], holes: HoleInfo[]): Record<number, number> {

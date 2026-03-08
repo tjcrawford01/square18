@@ -22,14 +22,21 @@ export interface SideBet {
   amount: number;
 }
 
+export type NumHoles = '18' | 'front9' | 'back9';
+
 export interface RoundConfig {
-  gameStyle: 'matchplay' | 'skins';
+  gameStyle: 'matchplay' | 'skins' | 'fivethreeone';
   tee: string;
+  numHoles: NumHoles;
   stakes: { front: number; back: number; total: number };
   skinValue: number;
   autoPress: boolean;
   pressAt: number;
   sideBets: SideBet[];
+  /** 5-3-1 only: 'perPoint' = $ per point, 'fixedPot' = total pot */
+  five31Mode?: 'perPoint' | 'fixedPot';
+  /** 5-3-1 only: dollars per point or total pot $ */
+  five31Value?: number;
 }
 
 export type Scores = Record<number, Record<number, number>>;
@@ -80,11 +87,14 @@ interface RoundState {
 const defaultRound: RoundConfig & { players: Player[]; teams: Team[]; scores: Scores } = {
   gameStyle: 'matchplay',
   tee: 'Blue',
+  numHoles: '18',
   stakes: { front: 10, back: 10, total: 20 },
   skinValue: 5,
   autoPress: true,
   pressAt: 2,
   sideBets: [],
+  five31Mode: 'perPoint',
+  five31Value: 1,
   players: DEFAULT_PLAYERS,
   teams: DEFAULT_TEAMS,
   scores: {},

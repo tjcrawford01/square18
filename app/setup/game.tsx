@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRoundStore, buildDefaultTeams } from '../../src/store/roundStore';
-import { ASPETUCK, getTeeOrDefault } from '../../src/data/aspetuck';
+import { useCourseStore } from '../../src/store/courseStore';
+import { getTeeOrDefault } from '../../src/types/course';
 import { SIDE_BET_TYPES } from '../../src/data/sideBetTypes';
-import { courseHandicap } from '../../src/engine/handicap';
+import { courseHandicap, playingHandicaps } from '../../src/engine/handicap';
 import { NavBar } from '../../src/components/NavBar';
 import { Card } from '../../src/components/Card';
 import { SectionLabel } from '../../src/components/SectionLabel';
@@ -13,24 +14,15 @@ import { PrimaryBtn } from '../../src/components/PrimaryBtn';
 import { Colors } from '../../src/theme/colors';
 import type { SideBet } from '../../src/store/roundStore';
 
-function eligibleHoles(typeId: string, holes: { par: number; hole: number }[]): number[] {
-  const t = SIDE_BET_TYPES.find((x) => x.id === typeId);
-  if (!t) return holes.map((h) => h.hole);
-  if (t.par3only) return holes.filter((h) => h.par === 3).map((h) => h.hole);
-  if (t.par3exclude) return holes.filter((h) => h.par !== 3).map((h) => h.hole);
-  return holes.map((h) => h.hole);
-}
-
 export default function GameScreen() {
   const router = useRouter();
   const { players, teams, setTeams, round, setRound, startRound } = useRoundStore();
-  const [addingBet, setAddingBet] = useState(false);
-  const [newBet, setNewBet] = useState({ type: 'ctp', hole: 5, amount: 5 });
-
-  const tee = getTeeOrDefault(round.tee);
-  const holes = tee.holes;
+  const selectedCourse = useCourseStore((s) => s.selectedCourse);
+  const tee = getTeeOrDefault(selectedCourse, round.tee);
   const isMatchPlay = round.gameStyle === 'matchplay';
+  const is531 = round.gameStyle === 'fivethreeone';
   const matchPlayDisabled = players.length === 3;
+  const show531 = players.length === 3;
 
   useEffect(() => {
     if (players.length === 3 && round.gameStyle === 'matchplay') {
@@ -44,16 +36,6 @@ export default function GameScreen() {
     }
   }, []);
 
-  const addBet = () => {
-    const id = Date.now();
-    const hole = newBet.type === 'birdie' || newBet.hole === 0 ? null : newBet.hole;
-    setRound({
-      sideBets: [...round.sideBets, { id, type: newBet.type, hole, amount: newBet.amount }],
-    });
-    setAddingBet(false);
-    setNewBet({ type: 'ctp', hole: eligibleHoles('ctp')[0], amount: 5 });
-  };
-
   const assignTeam = (pid: number, ti: number) => {
     setTeams((prev) => {
       const next = prev.map((t) => ({ ...t, playerIds: t.playerIds.filter((id) => id !== pid) }));
@@ -64,29 +46,40 @@ export default function GameScreen() {
 
   const handleLockAndTeeOff = () => {
     startRound();
-    router.replace('/round/1');
+    const firstHole = (round.numHoles ?? '18') === 'back9' ? 10 : 1;
+    router.replace(`/round/${firstHole}`);
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
       <NavBar title="Game Setup" subtitle="Step 2 of 3" onBack={() => router.back()} />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <SectionLabel>Game Style</SectionLabel>
         <View style={styles.gameStyleRow}>
           {[
-            { id: 'matchplay', icon: '🏆', label: 'Match Play', desc: players.length === 2 ? '1v1 Nassau' : '2v2 Best Ball Nassau' },
-            { id: 'skins', icon: '💰', label: 'Skins', desc: 'Win holes, carry ties' },
-          ].map((g) => (
+            { id: 'matchplay', icon: '🏆', label: 'Match Play', desc: players.length === 2 ? '1v1 Nassau' : '2v2 Best Ball Nassau', disabled: matchPlayDisabled },
+            { id: 'skins', icon: '💰', label: 'Skins', desc: 'Win holes, carry ties', disabled: false },
+            ...(show531 ? [{ id: 'fivethreeone', icon: '🎯', label: '5-3-1', desc: 'Low/mid/high net get 5-3-1 pts', disabled: false }] : []),
+          ].map((g: { id: string; icon: string; label: string; desc: string; disabled: boolean }) => (
             <Pressable
               key={g.id}
               onPress={() => {
-                if (g.id === 'matchplay' && matchPlayDisabled) return;
-                setRound({ gameStyle: g.id as 'matchplay' | 'skins' });
+                if (g.disabled) return;
+                const updates: Partial<typeof round> = { gameStyle: g.id as 'matchplay' | 'skins' | 'fivethreeone' };
+                if (g.id === 'fivethreeone' && (round.five31Mode == null || round.five31Value == null)) {
+                  updates.five31Mode = round.five31Mode ?? 'perPoint';
+                  updates.five31Value = round.five31Value ?? 1;
+                }
+                setRound(updates);
               }}
               style={[
                 styles.gameStyleBtn,
                 round.gameStyle === g.id && styles.gameStyleBtnActive,
-                g.id === 'matchplay' && matchPlayDisabled && styles.gameStyleBtnDisabled,
+                g.disabled && styles.gameStyleBtnDisabled,
               ]}
             >
               <Text style={styles.gameStyleIcon}>{g.icon}</Text>
@@ -96,22 +89,42 @@ export default function GameScreen() {
           ))}
         </View>
 
+        <SectionLabel>Number of Holes</SectionLabel>
+        <View style={styles.numHolesRow}>
+          {[
+            { id: '18' as const, label: '18' },
+            { id: 'front9' as const, label: 'Front 9' },
+            { id: 'back9' as const, label: 'Back 9' },
+          ].map((opt) => (
+            <Pressable
+              key={opt.id}
+              onPress={() => setRound({ numHoles: opt.id })}
+              style={[styles.numHolesBtn, (round.numHoles ?? '18') === opt.id && styles.numHolesBtnActive]}
+            >
+              <Text style={[(round.numHoles ?? '18') === opt.id ? styles.numHolesBtnTextActive : styles.numHolesBtnText]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
         <SectionLabel>Tees</SectionLabel>
         <Pressable
           style={styles.teeDropdown}
-          onPress={() =>
+          onPress={() => {
+            if (!selectedCourse?.tees?.length) return;
             Alert.alert(
               'Select tees',
               undefined,
-              ASPETUCK.tees.map((t) => ({
+              selectedCourse.tees.map((t) => ({
                 text: `${t.name} (${t.rating}/${t.slope})`,
                 onPress: () => setRound({ tee: t.name }),
               })).concat([{ text: 'Cancel', style: 'cancel' }])
-            )
-          }
+            );
+          }}
         >
-          <Text style={styles.teeDropdownLabel}>{tee.name}</Text>
-          <Text style={styles.teeDropdownSub}>{tee.rating} / {tee.slope}</Text>
+          <Text style={styles.teeDropdownLabel}>{tee?.name ?? round.tee}</Text>
+          <Text style={styles.teeDropdownSub}>{tee ? `${tee.rating} / ${tee.slope}` : '—'}</Text>
           <Text style={styles.teeDropdownChevron}>▾</Text>
         </Pressable>
 
@@ -119,9 +132,15 @@ export default function GameScreen() {
           <>
             <SectionLabel>Nassau Stakes (per match)</SectionLabel>
             <View style={styles.stakesRow}>
-              {(['front', 'back', 'total'] as const).map((key, i) => (
+              {(
+                (round.numHoles ?? '18') === 'front9'
+                  ? [['front', 'Front 9']] as const
+                  : (round.numHoles ?? '18') === 'back9'
+                    ? [['back', 'Back 9']] as const
+                    : [['front', 'Front 9'], ['back', 'Back 9'], ['total', 'Overall']] as const
+              ).map(([key, label]) => (
                 <View key={key} style={styles.stakeCol}>
-                  <Text style={styles.stakeLabel}>{['Front 9', 'Back 9', 'Overall'][i]}</Text>
+                  <Text style={styles.stakeLabel}>{label}</Text>
                   <View style={styles.stakeInputWrap}>
                     <Text style={styles.dollar}>$</Text>
                     <TextInput
@@ -139,24 +158,31 @@ export default function GameScreen() {
               ))}
             </View>
 
-            {players.length === 2 ? (
-              <>
-                <SectionLabel>Match-up</SectionLabel>
-                <Card accent={Colors.forest} style={styles.matchCard}>
-                  <View style={styles.matchupRow}>
-                    <View style={styles.matchupSide}>
-                      <Text style={styles.matchupName}>{players[0].name}</Text>
-                      <Text style={styles.matchupCh}>CH {courseHandicap(players[0].index, tee)}</Text>
+            {players.length === 2 && tee ? (() => {
+              const courseHcps: Record<number, number> = {
+                [players[0].id]: courseHandicap(players[0].index ?? 0, tee),
+                [players[1].id]: courseHandicap(players[1].index ?? 0, tee),
+              };
+              const playingHcps = playingHandicaps(courseHcps, round.gameStyle === 'matchplay');
+              return (
+                <>
+                  <SectionLabel>Match-up</SectionLabel>
+                  <Card accent={Colors.forest} style={styles.matchCard}>
+                    <View style={styles.matchupRow}>
+                      <View style={styles.matchupSide}>
+                        <Text style={styles.matchupName}>{players[0].name}</Text>
+                        <Text style={styles.matchupCh}>CH {playingHcps[players[0].id]}</Text>
+                      </View>
+                      <Text style={styles.vs}>vs</Text>
+                      <View style={styles.matchupSide}>
+                        <Text style={[styles.matchupName, { color: Colors.blue }]}>{players[1].name}</Text>
+                        <Text style={styles.matchupCh}>CH {playingHcps[players[1].id]}</Text>
+                      </View>
                     </View>
-                    <Text style={styles.vs}>vs</Text>
-                    <View style={styles.matchupSide}>
-                      <Text style={[styles.matchupName, { color: Colors.blue }]}>{players[1].name}</Text>
-                      <Text style={styles.matchupCh}>CH {courseHandicap(players[1].index, tee)}</Text>
-                    </View>
-                  </View>
-                </Card>
-              </>
-            ) : (
+                  </Card>
+                </>
+              );
+            })() : (
               <>
                 <SectionLabel>Teams</SectionLabel>
                 {teams.map((team, ti) => (
@@ -209,7 +235,41 @@ export default function GameScreen() {
           </>
         )}
 
-        {!isMatchPlay && (
+        {is531 && (
+          <>
+            <SectionLabel>5-3-1 Stakes</SectionLabel>
+            <View style={styles.five31OptionRow}>
+              <Pressable
+                style={[styles.five31Option, round.five31Mode === 'perPoint' && styles.five31OptionActive]}
+                onPress={() => setRound({ five31Mode: 'perPoint' })}
+              >
+                <Text style={[styles.five31OptionLabel, round.five31Mode === 'perPoint' && styles.five31OptionLabelActive]}>Per Point</Text>
+                <Text style={[styles.five31OptionDesc, round.five31Mode === 'perPoint' && styles.five31OptionDescActive]}>$ per point</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.five31Option, round.five31Mode === 'fixedPot' && styles.five31OptionActive]}
+                onPress={() => setRound({ five31Mode: 'fixedPot' })}
+              >
+                <Text style={[styles.five31OptionLabel, round.five31Mode === 'fixedPot' && styles.five31OptionLabelActive]}>Fixed Pot</Text>
+                <Text style={[styles.five31OptionDesc, round.five31Mode === 'fixedPot' && styles.five31OptionDescActive]}>Total pot $</Text>
+              </Pressable>
+            </View>
+            <View style={styles.skinValueRow}>
+              <Text style={styles.dollarLarge}>$</Text>
+              <TextInput
+                style={styles.skinValueInput}
+                value={round.five31Value != null ? String(round.five31Value) : ''}
+                onChangeText={(t) => setRound({ five31Value: parseInt(t, 10) || 0 })}
+                keyboardType="number-pad"
+              />
+              <Text style={styles.perSkin}>
+                {round.five31Mode === 'perPoint' ? 'per point' : 'total pot'}
+              </Text>
+            </View>
+          </>
+        )}
+
+        {!isMatchPlay && !is531 && (
           <>
             <SectionLabel>Skin Value</SectionLabel>
             <View style={styles.skinValueRow}>
@@ -231,21 +291,21 @@ export default function GameScreen() {
         )}
 
         <SectionLabel>Side Bets</SectionLabel>
-        {round.sideBets.length === 0 && !addingBet && (
+        {(!round.sideBets || round.sideBets.length === 0) && (
           <Text style={styles.noSideBets}>No side bets yet.</Text>
         )}
-        {round.sideBets.map((sb) => {
+        {(Array.isArray(round.sideBets) ? round.sideBets : []).map((sb) => {
           const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
           return (
             <Card key={sb.id} accent={Colors.sand} style={styles.sideBetCard}>
               <View style={styles.sideBetRow}>
                 <View>
                   <Text style={styles.sideBetTitle}>
-                    {type?.label}{!type?.noHole ? ` · Hole ${sb.hole}` : ' · 18 holes'}
+                    {type?.label}{type?.noHole || sb.hole == null ? ' · 18 holes' : ` · Hole ${sb.hole}`}
                   </Text>
                   <Text style={styles.sideBetSub}>${sb.amount} · pot {sb.amount * players.length}</Text>
                 </View>
-                <Pressable onPress={() => setRound({ sideBets: round.sideBets.filter((s) => s.id !== sb.id) })}>
+                <Pressable onPress={() => setRound({ sideBets: (round.sideBets || []).filter((s) => s.id !== sb.id) })}>
                   <Text style={styles.removeBtn}>×</Text>
                 </Pressable>
               </View>
@@ -253,77 +313,14 @@ export default function GameScreen() {
           );
         })}
 
-        {addingBet ? (
-          <Card accent={Colors.gold} style={styles.newBetCard}>
-            <Text style={styles.newBetTitle}>New Side Bet</Text>
-            <Text style={styles.fieldLabel}>TYPE</Text>
-            <View style={styles.pickerRow}>
-              {SIDE_BET_TYPES.map((t) => (
-                <Pressable
-                  key={t.id}
-                  onPress={() => {
-                    const eligible = eligibleHoles(t.id, holes);
-                    setNewBet((b) => ({ ...b, type: t.id, hole: t.noHole ? 0 : eligible[0] }));
-                  }}
-                  style={[styles.pickerOpt, newBet.type === t.id && styles.pickerOptActive]}
-                >
-                  <View style={styles.pickerOptContent}>
-                    <Text style={newBet.type === t.id ? styles.pickerOptTextActive : styles.pickerOptText}>{t.label}</Text>
-                    <Text style={newBet.type === t.id ? styles.pickerOptDescActive : styles.pickerOptDesc}>{t.desc}</Text>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-            {!SIDE_BET_TYPES.find((t) => t.id === newBet.type)?.noHole && (
-              <>
-                <Text style={styles.fieldLabel}>HOLE</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.holesRow}>
-                  {eligibleHoles(newBet.type, holes).map((h) => {
-                    const hd = holes[h - 1];
-                    const isSelected = newBet.hole === h;
-                    return (
-                      <Pressable
-                        key={h}
-                        onPress={() => setNewBet((b) => ({ ...b, hole: b.hole === h ? 0 : h }))}
-                        style={[styles.holeChip, isSelected && styles.holeChipActive]}
-                      >
-                        <Text style={isSelected ? styles.holeChipTextActive : styles.holeChipText}>H{h} (Par {hd.par})</Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </>
-            )}
-            <Text style={styles.fieldLabel}>AMOUNT PER PLAYER ($)</Text>
-            <TextInput
-              style={styles.amountInput}
-              value={newBet.amount ? String(newBet.amount) : ''}
-              onChangeText={(t) => setNewBet((b) => ({ ...b, amount: parseInt(t, 10) || 0 }))}
-              keyboardType="number-pad"
-            />
-            <View style={styles.newBetActions}>
-              <Pressable style={styles.cancelBtn} onPress={() => setAddingBet(false)}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.addBetBtn, !SIDE_BET_TYPES.find((t) => t.id === newBet.type)?.noHole && !newBet.hole && styles.addBetBtnDisabled]}
-                onPress={addBet}
-                disabled={!SIDE_BET_TYPES.find((t) => t.id === newBet.type)?.noHole ? !newBet.hole : false}
-              >
-                <Text style={[styles.addBetBtnText, !SIDE_BET_TYPES.find((t) => t.id === newBet.type)?.noHole && !newBet.hole && styles.addBetBtnTextDisabled]}>Add ✓</Text>
-              </Pressable>
-            </View>
-          </Card>
-        ) : (
-          <Pressable style={styles.addSideBetBtn} onPress={() => setAddingBet(true)}>
-            <Text style={styles.addSideBetBtnText}>+ Add Side Bet</Text>
-          </Pressable>
-        )}
+        <Pressable style={styles.addSideBetBtn} onPress={() => router.push('/setup/add-side-bet')}>
+          <Text style={styles.addSideBetBtnText}>+ Add Side Bet</Text>
+        </Pressable>
       </ScrollView>
       <View style={styles.footer}>
         <PrimaryBtn label="Lock & Tee Off 🏌️" onPress={handleLockAndTeeOff} />
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -352,6 +349,44 @@ const styles = StyleSheet.create({
   gameStyleDesc: { fontSize: 11, opacity: 0.7, marginTop: 3, color: Colors.ink },
   gameStyleDescActive: { color: Colors.cream },
   gameStyleBtnDisabled: { opacity: 0.5 },
+  numHolesRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  numHolesBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: Colors.grayLight,
+    backgroundColor: Colors.parchment,
+    alignItems: 'center',
+  },
+  numHolesBtnActive: {
+    borderColor: Colors.forest,
+    backgroundColor: Colors.forest,
+    borderBottomWidth: 4,
+    borderBottomColor: Colors.gold,
+  },
+  numHolesBtnText: { fontSize: 14, fontWeight: '700', color: Colors.ink },
+  numHolesBtnTextActive: { fontSize: 14, fontWeight: '700', color: Colors.cream },
+  five31OptionRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  five31Option: {
+    flex: 1,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: Colors.grayLight,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  five31OptionActive: {
+    backgroundColor: Colors.forest,
+    borderColor: Colors.forest,
+    borderBottomWidth: 4,
+    borderBottomColor: Colors.gold,
+  },
+  five31OptionLabel: { fontWeight: '700', fontSize: 14, color: Colors.ink },
+  five31OptionLabelActive: { color: Colors.cream },
+  five31OptionDesc: { fontSize: 11, marginTop: 3, color: Colors.gray },
+  five31OptionDescActive: { color: Colors.cream },
   teeDropdown: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -473,7 +508,7 @@ const styles = StyleSheet.create({
   pickerOptTextActive: { fontSize: 12, color: Colors.cream, fontWeight: '700' },
   pickerOptDesc: { fontSize: 11, color: Colors.gray, marginTop: 2 },
   pickerOptDescActive: { fontSize: 11, color: Colors.cream, marginTop: 2, opacity: 0.9 },
-  holesRow: { marginBottom: 10 },
+  holesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   holeChip: {
     paddingVertical: 6,
     paddingHorizontal: 10,

@@ -1,4 +1,4 @@
-import type { HoleInfo } from '../data/aspetuck';
+import type { HoleInfo } from '../types/course';
 import { netScore } from './handicap';
 import type { Scores, Handicaps } from './matchPlay';
 

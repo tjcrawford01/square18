@@ -15,8 +15,13 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.square18.app",
+      "usesNonExemptEncryption": false,
       "infoPlist": {
-        "LSApplicationQueriesSchemes": ["venmo"]
+        "LSApplicationQueriesSchemes": [
+          "venmo",
+          "venmo"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -34,6 +39,12 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9597043d-5c6c-4182-991d-26bd66291cc3"
+      }
+    }
   }
 }

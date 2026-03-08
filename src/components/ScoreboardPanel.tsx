@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { teamMatchResult, computePresses } from '../engine/matchPlay';
 import { computeSkins } from '../engine/skins';
 import type { Scores, Handicaps } from '../engine/matchPlay';
-import type { HoleInfo } from '../data/aspetuck';
+import type { HoleInfo } from '../types/course';
 import { Colors } from '../theme/colors';
 
 interface RoundLike {
@@ -22,11 +22,13 @@ interface ScoreboardPanelProps {
   hcps: Handicaps;
   currentHole: number;
   holes: HoleInfo[];
+  firstHole?: number;
+  lastHole?: number;
 }
 
-export function ScoreboardPanel({ round, scores, hcps, currentHole, holes }: ScoreboardPanelProps) {
+export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, firstHole = 1, lastHole = 18 }: ScoreboardPanelProps) {
   const isMatchPlay = round.gameStyle === 'matchplay';
-  const holesPlayed = currentHole - 1;
+  const holesPlayed = currentHole - firstHole;
 
   if (isMatchPlay) {
     const t1 = round.teams[0].playerIds;
@@ -34,13 +36,17 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes }: Sco
     const getName = (ids: number[]) =>
       ids.map((id) => round.players.find((p) => p.id === id)?.initials ?? '?').join('/');
 
-    const front = holesPlayed >= 1 ? teamMatchResult(scores, hcps, t1, t2, 1, Math.min(holesPlayed, 9), holes) : null;
-    const back = holesPlayed >= 10 ? teamMatchResult(scores, hcps, t1, t2, 10, Math.min(holesPlayed, 18), holes) : null;
-    const total = holesPlayed >= 1 ? teamMatchResult(scores, hcps, t1, t2, 1, Math.min(holesPlayed, 18), holes) : null;
+    const frontStart = Math.max(firstHole, 1);
+    const frontEnd = Math.min(9, lastHole);
+    const backStart = Math.max(firstHole, 10);
+    const backEnd = Math.min(18, lastHole);
+    const front = frontEnd >= frontStart && holesPlayed >= 1 ? teamMatchResult(scores, hcps, t1, t2, frontStart, Math.min(firstHole + holesPlayed, frontEnd), holes) : null;
+    const back = backEnd >= backStart && holesPlayed >= (backStart - firstHole + 1) ? teamMatchResult(scores, hcps, t1, t2, backStart, Math.min(firstHole + holesPlayed, backEnd), holes) : null;
+    const total = holesPlayed >= 1 ? teamMatchResult(scores, hcps, t1, t2, firstHole, Math.min(firstHole + holesPlayed, lastHole), holes) : null;
 
-    const frontPresses = round.autoPress && holesPlayed >= 1 ? computePresses(scores, hcps, t1, t2, 1, 9, round.stakes.front, round.pressAt, holes) : [];
-    const backPresses = round.autoPress && holesPlayed >= 10 ? computePresses(scores, hcps, t1, t2, 10, 18, round.stakes.back, round.pressAt, holes) : [];
-    const activePresses = [...frontPresses, ...backPresses].filter((p) => p.startHole <= holesPlayed);
+    const frontPresses = round.autoPress && frontEnd >= frontStart ? computePresses(scores, hcps, t1, t2, frontStart, frontEnd, round.stakes.front, round.pressAt, holes) : [];
+    const backPresses = round.autoPress && backEnd >= backStart ? computePresses(scores, hcps, t1, t2, backStart, backEnd, round.stakes.back, round.pressAt, holes) : [];
+    const activePresses = [...frontPresses, ...backPresses].filter((p) => p.startHole <= firstHole + holesPlayed);
 
     let dollarBar: { net: number; leader: string | null } | null = null;
     if (total) {
@@ -49,7 +55,7 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes }: Sco
       const tAmt = total ? Math.sign(total.result) * round.stakes.total : 0;
       let pAmt = 0;
       activePresses.forEach((p) => {
-        const pr = teamMatchResult(scores, hcps, t1, t2, p.startHole, Math.min(holesPlayed, p.endHole), holes);
+        const pr = teamMatchResult(scores, hcps, t1, t2, p.startHole, Math.min(firstHole + holesPlayed, p.endHole), holes);
         pAmt += Math.sign(pr.result) * p.stake;
       });
       const net = fAmt + bAmt + tAmt + pAmt;
@@ -110,16 +116,22 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes }: Sco
           )}
         </View>
         <View style={styles.badgesRow}>
-          <Badge data={front} label="FRONT" maxHoles={9} />
-          <View style={styles.divider} />
-          <Badge data={back} label="BACK" maxHoles={9} />
-          <View style={styles.divider} />
-          <Badge data={total} label="TOTAL" maxHoles={18} />
+          {lastHole - firstHole + 1 === 9 ? (
+            <Badge data={total} label="9" maxHoles={9} />
+          ) : (
+            <>
+              <Badge data={front} label="FRONT" maxHoles={9} />
+              <View style={styles.divider} />
+              <Badge data={back} label="BACK" maxHoles={9} />
+              <View style={styles.divider} />
+              <Badge data={total} label="TOTAL" maxHoles={18} />
+            </>
+          )}
         </View>
         {activePresses.length > 0 && (
           <View style={styles.pressesSection}>
             {activePresses.map((p, i) => {
-              const pr = teamMatchResult(scores, hcps, t1, t2, p.startHole, Math.min(holesPlayed, p.endHole), holes);
+              const pr = teamMatchResult(scores, hcps, t1, t2, p.startHole, Math.min(firstHole + holesPlayed, p.endHole), holes);
               return (
                 <View key={i} style={styles.pressRow}>
                   <Text style={styles.pressLabel}>🔁 Press H{p.startHole}–{p.endHole} (${p.stake})</Text>

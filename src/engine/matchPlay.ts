@@ -1,4 +1,4 @@
-import type { HoleInfo } from '../data/aspetuck';
+import type { HoleInfo } from '../types/course';
 import { netScore } from './handicap';
 
 export type Scores = Record<number, Record<number, number | undefined> | undefined>;
@@ -121,6 +121,8 @@ export interface MatchSettlement {
   net: number;
 }
 
+export type NumHoles = '18' | 'front9' | 'back9';
+
 export function computeMatchSettlement(
   scores: Scores,
   hcps: Handicaps,
@@ -130,18 +132,19 @@ export function computeMatchSettlement(
   autoPress: boolean,
   pressAt: number,
   holes: HoleInfo[],
+  numHoles: NumHoles = '18',
 ): MatchSettlement {
-  const front = teamMatchResult(scores, hcps, t1ids, t2ids, 1, 9, holes);
-  const back = teamMatchResult(scores, hcps, t1ids, t2ids, 10, 18, holes);
-  const total = teamMatchResult(scores, hcps, t1ids, t2ids, 1, 18, holes);
-  const fAmt = Math.sign(front.result) * stakes.front;
-  const bAmt = Math.sign(back.result) * stakes.back;
-  const tAmt = Math.sign(total.result) * stakes.total;
+  const front = numHoles === 'back9' ? { result: 0, holesPlayed: 0 } : teamMatchResult(scores, hcps, t1ids, t2ids, 1, 9, holes);
+  const back = numHoles === 'front9' ? { result: 0, holesPlayed: 0 } : teamMatchResult(scores, hcps, t1ids, t2ids, 10, 18, holes);
+  const total = numHoles === 'front9' ? front : numHoles === 'back9' ? back : teamMatchResult(scores, hcps, t1ids, t2ids, 1, 18, holes);
+  const fAmt = numHoles === 'back9' ? 0 : Math.sign(front.result) * stakes.front;
+  const bAmt = numHoles === 'front9' ? 0 : Math.sign(back.result) * stakes.back;
+  const tAmt = numHoles !== '18' ? 0 : Math.sign(total.result) * stakes.total;
   let pressAmt = 0;
   const pressDetails: PressDetail[] = [];
   if (autoPress) {
-    const frontPresses = computePresses(scores, hcps, t1ids, t2ids, 1, 9, stakes.front, pressAt, holes);
-    const backPresses = computePresses(scores, hcps, t1ids, t2ids, 10, 18, stakes.back, pressAt, holes);
+    const frontPresses = numHoles === 'back9' ? [] : computePresses(scores, hcps, t1ids, t2ids, 1, 9, stakes.front, pressAt, holes);
+    const backPresses = numHoles === 'front9' ? [] : computePresses(scores, hcps, t1ids, t2ids, 10, 18, stakes.back, pressAt, holes);
     [...frontPresses, ...backPresses].forEach((p) => {
       const pr = teamMatchResult(scores, hcps, t1ids, t2ids, p.startHole, p.endHole, holes);
       const amt = Math.sign(pr.result) * p.stake;

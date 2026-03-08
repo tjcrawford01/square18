@@ -1,0 +1,180 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Pressable, Modal, TextInput, Linking, KeyboardAvoidingView, Platform } from 'react-native';
+import { Colors } from '../theme/colors';
+
+const FEEDBACK_EMAIL = 'feedback@square18.app';
+const FEEDBACK_SUBJECT = 'Square18 Feedback';
+
+interface HamburgerMenuProps {
+  showViewScorecard?: boolean;
+  onViewScorecard?: () => void;
+  /** Render prop: (openMenu) => element to show as the hamburger button */
+  renderTrigger: (openMenu: () => void) => React.ReactNode;
+}
+
+export function HamburgerMenu({ showViewScorecard, onViewScorecard, renderTrigger }: HamburgerMenuProps) {
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+
+  const openMenu = () => setMenuVisible(true);
+  const closeMenu = () => setMenuVisible(false);
+
+  const openFeedback = () => {
+    closeMenu();
+    setFeedbackVisible(true);
+  };
+
+  const sendFeedback = () => {
+    const body = feedbackText.trim() || ' ';
+    const url = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(FEEDBACK_SUBJECT)}&body=${encodeURIComponent(body)}`;
+    Linking.openURL(url);
+    setFeedbackText('');
+    setFeedbackVisible(false);
+  };
+
+  const handleViewScorecard = () => {
+    closeMenu();
+    onViewScorecard?.();
+  };
+
+  return (
+    <>
+      {renderTrigger(openMenu)}
+
+      <Modal visible={menuVisible} transparent animationType="fade">
+        <Pressable style={styles.menuOverlay} onPress={closeMenu}>
+          <View style={styles.menuDropdown}>
+            <Pressable style={styles.menuItem} onPress={openFeedback}>
+              <Text style={styles.menuItemText}>Feedback</Text>
+            </Pressable>
+            {showViewScorecard && onViewScorecard && (
+              <Pressable style={styles.menuItem} onPress={handleViewScorecard}>
+                <Text style={styles.menuItemText}>View Scorecard</Text>
+              </Pressable>
+            )}
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={feedbackVisible} transparent animationType="slide">
+        <Pressable style={styles.sheetOverlay} onPress={() => setFeedbackVisible(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.sheetAvoid}
+          >
+            <Pressable style={styles.feedbackSheet} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.feedbackTitle}>Send Feedback</Text>
+              <TextInput
+                style={styles.feedbackInput}
+                placeholder="What's on your mind?"
+                placeholderTextColor={Colors.gray}
+                multiline
+                numberOfLines={4}
+                value={feedbackText}
+                onChangeText={setFeedbackText}
+              />
+              <View style={styles.feedbackActions}>
+                <Pressable style={styles.feedbackCancel} onPress={() => { setFeedbackText(''); setFeedbackVisible(false); }}>
+                  <Text style={styles.feedbackCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.feedbackSend} onPress={sendFeedback}>
+                  <Text style={styles.feedbackSendText}>Send</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    alignItems: 'flex-end',
+    paddingTop: 56,
+    paddingRight: 16,
+  },
+  menuDropdown: {
+    backgroundColor: Colors.cream,
+    borderRadius: 8,
+    minWidth: 180,
+    borderWidth: 1,
+    borderColor: Colors.sand,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  menuItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.grayLight,
+  },
+  menuItemText: {
+    fontSize: 15,
+    color: Colors.ink,
+    fontWeight: '600',
+  },
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  sheetAvoid: {
+    justifyContent: 'flex-end',
+  },
+  feedbackSheet: {
+    backgroundColor: Colors.cream,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 24,
+    paddingBottom: 36,
+  },
+  feedbackTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.ink,
+    marginBottom: 16,
+  },
+  feedbackInput: {
+    borderWidth: 2,
+    borderColor: Colors.grayLight,
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 15,
+    color: Colors.ink,
+    minHeight: 120,
+    textAlignVertical: 'top',
+    marginBottom: 20,
+  },
+  feedbackActions: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'flex-end',
+  },
+  feedbackCancel: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  feedbackCancelText: {
+    fontSize: 16,
+    color: Colors.gray,
+  },
+  feedbackSend: {
+    backgroundColor: Colors.forest,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+  },
+  feedbackSendText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.cream,
+  },
+});

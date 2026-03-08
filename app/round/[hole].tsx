@@ -2,13 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useRoundStore } from '../../src/store/roundStore';
-import { getTeeOrDefault } from '../../src/data/aspetuck';
+import { useCourseStore } from '../../src/store/courseStore';
+import { getTeeOrDefault, getHolesForTee } from '../../src/types/course';
 import { SIDE_BET_TYPES } from '../../src/data/sideBetTypes';
-import { courseHandicap, strokesOnHole } from '../../src/engine/handicap';
+import { courseHandicap, playingHandicaps, strokesOnHole } from '../../src/engine/handicap';
 import { computeSkins } from '../../src/engine/skins';
+import { computeFiveThreeOne } from '../../src/engine/fiveThreeOne';
 import { Card } from '../../src/components/Card';
 import { SectionLabel } from '../../src/components/SectionLabel';
 import { ScoreboardPanel } from '../../src/components/ScoreboardPanel';
+import { HamburgerMenu } from '../../src/components/HamburgerMenu';
+import { ScorecardModal } from '../../src/components/ScorecardModal';
 import { Colors } from '../../src/theme/colors';
 
 type PopupMode = 'remind' | 'winner';
@@ -24,21 +28,28 @@ export default function HoleScreen() {
   const holeNum = Math.min(18, Math.max(1, parseInt(params.hole ?? '1', 10) || 1));
   const router = useRouter();
   const { round, scores, setScores, setCurrentHole, sideBetWinners, setSideBetWinner } = useRoundStore();
+  const selectedCourse = useCourseStore((s) => s.selectedCourse);
   const [popup, setPopup] = useState<PopupState | null>(null);
+  const [scorecardVisible, setScorecardVisible] = useState(false);
 
   useEffect(() => {
     setCurrentHole(holeNum);
   }, [holeNum, setCurrentHole]);
 
-  const tee = getTeeOrDefault(round.tee);
-  const holes = tee.holes;
-  const hd = holes[holeNum - 1];
+  const numHoles = round.numHoles ?? '18';
+  const firstHole = numHoles === 'back9' ? 10 : 1;
+  const lastHole = numHoles === 'front9' ? 9 : 18;
+  const allHoles = getHolesForTee(selectedCourse, round.tee);
+  const holes = allHoles.filter((h) => h.hole >= firstHole && h.hole <= lastHole);
+  const hd = allHoles[holeNum - 1] ?? { hole: holeNum, par: 4, si: holeNum, yards: 0 };
 
-  const hcps: Record<number, number> = {};
-  round.players.forEach((p) => {
-    const raw = courseHandicap(p.index ?? 0, tee);
-    hcps[p.id] = round.gameStyle === 'matchplay' ? Math.round(raw * 0.85) : raw;
-  });
+  const courseHcps: Record<number, number> = {};
+  if (tee) {
+    round.players.forEach((p) => {
+      courseHcps[p.id] = courseHandicap(p.index ?? 0, tee);
+    });
+  }
+  const hcps = playingHandicaps(courseHcps, round.gameStyle === 'matchplay');
 
   const setScore = (pid: number, score: number) => {
     const ns = {
@@ -57,13 +68,17 @@ export default function HoleScreen() {
 
   const allScored = round.players.every((p) => scores[p.id]?.[holeNum] != null);
   const sideBetsHere = round.sideBets.filter((sb) => sb.hole === holeNum);
-  const skinResults = round.gameStyle === 'skins' ? computeSkins(scores, hcps, round.players.map((p) => p.id), holes) : [];
+  const skinResults = round.gameStyle === 'skins' ? computeSkins(scores, hcps, round.players.map((p) => p.id), allHoles) : [];
   const carryHere = skinResults.find((r) => r.hole === holeNum)?.carryover ?? 0;
+  const five31Results =
+    round.gameStyle === 'fivethreeone' && round.players.length === 3
+      ? computeFiveThreeOne(scores, hcps, round.players.map((p) => p.id), allHoles)
+      : [];
 
   const goNext = () => {
     if (!allScored) return;
     const nextHole = holeNum + 1;
-    if (nextHole > 18) {
+    if (nextHole > lastHole) {
       router.replace('/settlement');
       return;
     }
@@ -111,9 +126,18 @@ export default function HoleScreen() {
           <Text style={styles.headerLabel}>YDS</Text>
           <Text style={styles.headerYds}>{hd.yards}</Text>
         </View>
+        <HamburgerMenu
+          showViewScorecard
+          onViewScorecard={() => setScorecardVisible(true)}
+          renderTrigger={(openMenu) => (
+            <Pressable onPress={openMenu} style={styles.hamburgerBtn} hitSlop={8}>
+              <Text style={styles.hamburgerText}>≡</Text>
+            </Pressable>
+          )}
+        />
       </View>
       <View style={styles.dots}>
-        {holes.map((h) => (
+        {allHoles.filter((h) => h.hole >= firstHole && h.hole <= lastHole).map((h) => (
           <Pressable
             key={h.hole}
             onPress={() => router.push(`/round/${h.hole}`)}
@@ -199,17 +223,41 @@ export default function HoleScreen() {
         })}
       </ScrollView>
 
-      {holeNum > 1 && (
-        <ScoreboardPanel round={round} scores={scores} hcps={hcps} currentHole={holeNum} holes={holes} />
+      {holeNum > firstHole && round.gameStyle !== 'fivethreeone' && (
+        <ScoreboardPanel round={round} scores={scores} hcps={hcps} currentHole={holeNum} holes={allHoles} firstHole={firstHole} lastHole={lastHole} />
+      )}
+      {holeNum > 1 && round.gameStyle === 'fivethreeone' && five31Results.length === 3 && (
+        <View style={styles.five31Panel}>
+          <Text style={styles.five31Title}>
+            5-3-1 STANDINGS  (through H{Math.min(holeNum, 18)})
+          </Text>
+          {five31Results
+            .slice()
+            .sort((a, b) => b.points - a.points)
+            .map((r, i) => {
+              const player = round.players.find((p) => p.id === r.playerId);
+              if (!player) return null;
+              const medals = ['🥇', '🥈', '🥉'];
+              const needHint = i === 2 && holeNum >= 9;
+              return (
+                <View key={r.playerId} style={styles.five31Row}>
+                  <Text style={styles.five31Medal}>{medals[i]}</Text>
+                  <Text style={styles.five31Name}>{player.name}</Text>
+                  <Text style={styles.five31Pts}>{r.points} pts</Text>
+                  {needHint && <Text style={styles.five31Hint}> (needs 5s)</Text>}
+                </View>
+              );
+            })}
+        </View>
       )}
 
       <View style={styles.footer}>
-        {holeNum > 1 && (
+        {holeNum > firstHole && (
           <Pressable style={styles.backBtn} onPress={() => router.back()}>
             <Text style={styles.backBtnText}>← Back</Text>
           </Pressable>
         )}
-        {holeNum < 18 ? (
+        {holeNum < lastHole ? (
           <Pressable
             style={[styles.nextBtn, !allScored && styles.nextBtnDisabled]}
             onPress={goNext}
@@ -224,6 +272,16 @@ export default function HoleScreen() {
         )}
       </View>
 
+      <ScorecardModal
+        visible={scorecardVisible}
+        onClose={() => setScorecardVisible(false)}
+        round={{ tee: round.tee, gameStyle: round.gameStyle, numHoles: round.numHoles }}
+        courseName={selectedCourse?.name ?? 'Course'}
+        players={round.players}
+        scores={scores}
+        hcps={hcps}
+        holes={holes}
+      />
       <Modal visible={popup != null} transparent animationType="slide">
         <Pressable style={styles.modalOverlay} onPress={() => {}}>
           <View style={[styles.modalSheet, popup?.mode === 'winner' && styles.modalSheetCream]}>
@@ -305,6 +363,23 @@ const styles = StyleSheet.create({
   headerRight: { alignItems: 'flex-end' },
   siValue: { color: Colors.sand },
   headerYds: { color: Colors.cream, fontSize: 26, fontWeight: '700' },
+  hamburgerBtn: { padding: 4, marginLeft: 8 },
+  hamburgerText: { color: Colors.cream, fontSize: 24, fontWeight: '700' },
+  five31Panel: {
+    backgroundColor: Colors.forest,
+    marginHorizontal: 14,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 10,
+    borderBottomWidth: 3,
+    borderBottomColor: Colors.gold,
+  },
+  five31Title: { color: Colors.rough, fontSize: 10, letterSpacing: 2, marginBottom: 10 },
+  five31Row: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  five31Medal: { marginRight: 8 },
+  five31Name: { flex: 1, color: Colors.cream, fontWeight: '700', fontSize: 14 },
+  five31Pts: { color: Colors.gold, fontWeight: '700', fontSize: 14 },
+  five31Hint: { color: Colors.rough, fontSize: 11 },
   dots: { flexDirection: 'row', gap: 3, paddingHorizontal: 20, paddingBottom: 10, backgroundColor: Colors.forest },
   dot: { flex: 1, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' },
   dotDone: { backgroundColor: Colors.rough },
