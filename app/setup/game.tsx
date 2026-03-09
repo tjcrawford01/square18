@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRoundStore, buildDefaultTeams } from '../../src/store/roundStore';
 import { useCourseStore } from '../../src/store/courseStore';
@@ -45,19 +45,30 @@ export default function GameScreen() {
   };
 
   const handleLockAndTeeOff = () => {
+    if (!selectedCourse) {
+      Alert.alert(
+        "Can't Start Round",
+        'Please select a course first. Go back to the home screen and choose a course.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    if (players.length < 2) {
+      Alert.alert(
+        "Can't Start Round",
+        'You need at least 2 players. Go back and add players.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
     startRound();
-    const firstHole = (round.numHoles ?? '18') === 'back9' ? 10 : 1;
-    router.replace(`/round/${firstHole}`);
+    router.replace('/round/1');
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
-    >
+    <View style={styles.container}>
       <NavBar title="Game Setup" subtitle="Step 2 of 3" onBack={() => router.back()} />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <SectionLabel>Game Style</SectionLabel>
         <View style={styles.gameStyleRow}>
           {[
@@ -89,25 +100,6 @@ export default function GameScreen() {
           ))}
         </View>
 
-        <SectionLabel>Number of Holes</SectionLabel>
-        <View style={styles.numHolesRow}>
-          {[
-            { id: '18' as const, label: '18' },
-            { id: 'front9' as const, label: 'Front 9' },
-            { id: 'back9' as const, label: 'Back 9' },
-          ].map((opt) => (
-            <Pressable
-              key={opt.id}
-              onPress={() => setRound({ numHoles: opt.id })}
-              style={[styles.numHolesBtn, (round.numHoles ?? '18') === opt.id && styles.numHolesBtnActive]}
-            >
-              <Text style={[(round.numHoles ?? '18') === opt.id ? styles.numHolesBtnTextActive : styles.numHolesBtnText]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
         <SectionLabel>Tees</SectionLabel>
         <Pressable
           style={styles.teeDropdown}
@@ -132,15 +124,9 @@ export default function GameScreen() {
           <>
             <SectionLabel>Nassau Stakes (per match)</SectionLabel>
             <View style={styles.stakesRow}>
-              {(
-                (round.numHoles ?? '18') === 'front9'
-                  ? [['front', 'Front 9']] as const
-                  : (round.numHoles ?? '18') === 'back9'
-                    ? [['back', 'Back 9']] as const
-                    : [['front', 'Front 9'], ['back', 'Back 9'], ['total', 'Overall']] as const
-              ).map(([key, label]) => (
+              {(['front', 'back', 'total'] as const).map((key, i) => (
                 <View key={key} style={styles.stakeCol}>
-                  <Text style={styles.stakeLabel}>{label}</Text>
+                  <Text style={styles.stakeLabel}>{['Front 9', 'Back 9', 'Overall'][i]}</Text>
                   <View style={styles.stakeInputWrap}>
                     <Text style={styles.dollar}>$</Text>
                     <TextInput
@@ -320,7 +306,7 @@ export default function GameScreen() {
       <View style={styles.footer}>
         <PrimaryBtn label="Lock & Tee Off 🏌️" onPress={handleLockAndTeeOff} />
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -349,25 +335,6 @@ const styles = StyleSheet.create({
   gameStyleDesc: { fontSize: 11, opacity: 0.7, marginTop: 3, color: Colors.ink },
   gameStyleDescActive: { color: Colors.cream },
   gameStyleBtnDisabled: { opacity: 0.5 },
-  numHolesRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  numHolesBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: Colors.grayLight,
-    backgroundColor: Colors.parchment,
-    alignItems: 'center',
-  },
-  numHolesBtnActive: {
-    borderColor: Colors.forest,
-    backgroundColor: Colors.forest,
-    borderBottomWidth: 4,
-    borderBottomColor: Colors.gold,
-  },
-  numHolesBtnText: { fontSize: 14, fontWeight: '700', color: Colors.ink },
-  numHolesBtnTextActive: { fontSize: 14, fontWeight: '700', color: Colors.cream },
   five31OptionRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   five31Option: {
     flex: 1,

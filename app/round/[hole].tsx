@@ -36,12 +36,9 @@ export default function HoleScreen() {
     setCurrentHole(holeNum);
   }, [holeNum, setCurrentHole]);
 
-  const numHoles = round.numHoles ?? '18';
-  const firstHole = numHoles === 'back9' ? 10 : 1;
-  const lastHole = numHoles === 'front9' ? 9 : 18;
-  const allHoles = getHolesForTee(selectedCourse, round.tee);
-  const holes = allHoles.filter((h) => h.hole >= firstHole && h.hole <= lastHole);
-  const hd = allHoles[holeNum - 1] ?? { hole: holeNum, par: 4, si: holeNum, yards: 0 };
+  const tee = getTeeOrDefault(selectedCourse, round.tee);
+  const holes = getHolesForTee(selectedCourse, round.tee);
+  const hd = holes[holeNum - 1] ?? { hole: holeNum, par: 4, si: holeNum, yards: 0 };
 
   const courseHcps: Record<number, number> = {};
   if (tee) {
@@ -68,17 +65,17 @@ export default function HoleScreen() {
 
   const allScored = round.players.every((p) => scores[p.id]?.[holeNum] != null);
   const sideBetsHere = round.sideBets.filter((sb) => sb.hole === holeNum);
-  const skinResults = round.gameStyle === 'skins' ? computeSkins(scores, hcps, round.players.map((p) => p.id), allHoles) : [];
+  const skinResults = round.gameStyle === 'skins' ? computeSkins(scores, hcps, round.players.map((p) => p.id), holes) : [];
   const carryHere = skinResults.find((r) => r.hole === holeNum)?.carryover ?? 0;
   const five31Results =
     round.gameStyle === 'fivethreeone' && round.players.length === 3
-      ? computeFiveThreeOne(scores, hcps, round.players.map((p) => p.id), allHoles)
+      ? computeFiveThreeOne(scores, hcps, round.players.map((p) => p.id), holes)
       : [];
 
   const goNext = () => {
     if (!allScored) return;
     const nextHole = holeNum + 1;
-    if (nextHole > lastHole) {
+    if (nextHole > 18) {
       router.replace('/settlement');
       return;
     }
@@ -137,7 +134,7 @@ export default function HoleScreen() {
         />
       </View>
       <View style={styles.dots}>
-        {allHoles.filter((h) => h.hole >= firstHole && h.hole <= lastHole).map((h) => (
+        {holes.map((h) => (
           <Pressable
             key={h.hole}
             onPress={() => router.push(`/round/${h.hole}`)}
@@ -223,8 +220,8 @@ export default function HoleScreen() {
         })}
       </ScrollView>
 
-      {holeNum > firstHole && round.gameStyle !== 'fivethreeone' && (
-        <ScoreboardPanel round={round} scores={scores} hcps={hcps} currentHole={holeNum} holes={allHoles} firstHole={firstHole} lastHole={lastHole} />
+      {holeNum > 1 && round.gameStyle !== 'fivethreeone' && (
+        <ScoreboardPanel round={round} scores={scores} hcps={hcps} currentHole={holeNum} holes={holes} />
       )}
       {holeNum > 1 && round.gameStyle === 'fivethreeone' && five31Results.length === 3 && (
         <View style={styles.five31Panel}>
@@ -252,12 +249,12 @@ export default function HoleScreen() {
       )}
 
       <View style={styles.footer}>
-        {holeNum > firstHole && (
+        {holeNum > 1 && (
           <Pressable style={styles.backBtn} onPress={() => router.back()}>
             <Text style={styles.backBtnText}>← Back</Text>
           </Pressable>
         )}
-        {holeNum < lastHole ? (
+        {holeNum < 18 ? (
           <Pressable
             style={[styles.nextBtn, !allScored && styles.nextBtnDisabled]}
             onPress={goNext}
@@ -275,7 +272,7 @@ export default function HoleScreen() {
       <ScorecardModal
         visible={scorecardVisible}
         onClose={() => setScorecardVisible(false)}
-        round={{ tee: round.tee, gameStyle: round.gameStyle, numHoles: round.numHoles }}
+        round={{ tee: round.tee, gameStyle: round.gameStyle }}
         courseName={selectedCourse?.name ?? 'Course'}
         players={round.players}
         scores={scores}
@@ -347,6 +344,24 @@ export default function HoleScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
+  errorCard: {
+    margin: 24,
+    padding: 24,
+    backgroundColor: Colors.parchment,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.sand,
+    alignItems: 'center',
+  },
+  errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink, marginBottom: 12 },
+  errorBody: { fontSize: 14, color: Colors.gray, textAlign: 'center', lineHeight: 22, marginBottom: 20 },
+  errorBtn: {
+    backgroundColor: Colors.forest,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+  },
+  errorBtnText: { fontSize: 16, fontWeight: '700', color: Colors.cream },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

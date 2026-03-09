@@ -9,6 +9,7 @@ import { courseHandicap, playingHandicaps } from '../src/engine/handicap';
 import { computeMatchSettlement } from '../src/engine/matchPlay';
 import { computeSkins } from '../src/engine/skins';
 import { computeFiveThreeOne, fiveThreeOneSettlement } from '../src/engine/fiveThreeOne';
+import { calculateWolf } from '../src/engine/wolf';
 import { countBirdies } from '../src/engine/birdies';
 import { computeSideBetNet } from '../src/engine/sideBets';
 import { buildSettlementText, buildScorecardShareText, minTransactions, venmoDeepLink, venmoLink, iMessageLink } from '../src/engine/settlement';
@@ -29,6 +30,7 @@ export default function SettlementScreen() {
   const holes = allHoles.filter((h) => h.hole >= firstHole && h.hole <= lastHole);
   const isMatchPlay = round.gameStyle === 'matchplay';
   const is531 = round.gameStyle === 'fivethreeone';
+  const isWolf = round.gameStyle === 'wolf';
 
   const courseHcps: Record<number, number> = {};
   if (tee) {
@@ -36,7 +38,7 @@ export default function SettlementScreen() {
       courseHcps[p.id] = courseHandicap(p.index ?? 0, tee);
     });
   }
-  const hcps = playingHandicaps(courseHcps, isMatchPlay);
+  const hcps = playingHandicaps(courseHcps, isMatchPlay || isWolf);
 
   const t1 = round.teams[0].playerIds;
   const t2 = round.teams[1].playerIds;
@@ -50,14 +52,14 @@ export default function SettlementScreen() {
     ? computeMatchSettlement(round.scores, hcps, t1, t2, round.stakes, round.autoPress, round.pressAt, allHoles, numHoles)
     : null;
 
-  const skinResults = !isMatchPlay && !is531 ? computeSkins(round.scores, hcps, round.players.map((p) => p.id), holes) : [];
+  const skinResults = !isMatchPlay && !is531 && !isWolf ? computeSkins(round.scores, hcps, round.players.map((p) => p.id), holes) : [];
   const skinsWon: Record<number, number> = {};
   round.players.forEach((p) => (skinsWon[p.id] = 0));
   skinResults.forEach((r) => {
     if (r.winner != null) skinsWon[r.winner] = (skinsWon[r.winner] ?? 0) + (r.skinsWon ?? 0);
   });
   const perSkin = round.skinValue * round.players.length;
-  const skinsSettlement = !isMatchPlay && !is531 ? { skinResults, skinsWon, perSkin } : null;
+  const skinsSettlement = !isMatchPlay && !is531 && !isWolf ? { skinResults, skinsWon, perSkin } : null;
 
   const five31Results = is531 && round.players.length === 3
     ? computeFiveThreeOne(round.scores, hcps, round.players.map((p) => p.id), holes)
@@ -70,6 +72,18 @@ export default function SettlementScreen() {
           round.five31Value
         )
       : [];
+
+  const wolfNet =
+    isWolf && round.wolfValue != null && round.wolfDecisions
+      ? calculateWolf(
+          round.players,
+          round.scores,
+          round.wolfDecisions,
+          holes,
+          hcps,
+          round.wolfValue
+        )
+      : null;
 
   const birdiePool = round.sideBets.find((sb) => sb.type === 'birdie');
   const birdieCounts = birdiePool ? countBirdies(round.scores, round.players.map((p) => p.id), holes) : null;
@@ -104,6 +118,10 @@ export default function SettlementScreen() {
     round.players.forEach((p) => {
       if (netPerPlayer[p.id] == null) netPerPlayer[p.id] = Math.round(sbNet[p.id] ?? 0);
     });
+  } else if (isWolf && wolfNet) {
+    round.players.forEach((p) => {
+      netPerPlayer[p.id] = Math.round((wolfNet[p.id] ?? 0) + (sbNet[p.id] ?? 0));
+    });
   } else if (skinsSettlement) {
     const totalSkins = skinsSettlement.skinResults.reduce((s, r) => s + (r.skinsWon ?? 0), 0);
     const totalPot = totalSkins * perSkin;
@@ -128,6 +146,7 @@ export default function SettlementScreen() {
       sbNet,
       birdieCounts: birdieCounts ?? undefined,
       five31Results: is531 ? five31Results : undefined,
+      wolfNet: isWolf ? wolfNet ?? undefined : undefined,
     }
   );
 
@@ -176,7 +195,7 @@ export default function SettlementScreen() {
         <Text style={styles.heroEmoji}>⛳</Text>
         <Text style={styles.heroTitle}>You're Square.</Text>
         <Text style={styles.heroSub}>
-          {selectedCourse?.name ?? 'Course'} · {round.tee} tees · {isMatchPlay ? 'Match Play' : is531 ? '5-3-1' : 'Skins'}
+          {selectedCourse?.name ?? 'Course'} · {round.tee} tees · {isMatchPlay ? 'Match Play' : is531 ? '5-3-1' : isWolf ? 'Wolf' : 'Skins'}
         </Text>
       </View>
 
@@ -189,6 +208,27 @@ export default function SettlementScreen() {
             You're the scorekeeper. Use the breakdown below and Venmo buttons to request payment from others, or send the group text so everyone sees the totals.
           </Text>
         </View>
+        {isWolf && wolfNet && (
+          <>
+            <SectionLabel>Wolf Results</SectionLabel>
+            <Card accent={Colors.gold} style={styles.card}>
+              {round.players
+                .slice()
+                .sort((a, b) => (wolfNet[b.id] ?? 0) - (wolfNet[a.id] ?? 0))
+                .map((p) => (
+                  <View key={p.id} style={styles.skinRow}>
+                    <View style={styles.skinLeft}>
+                      <Text style={[styles.skinName, (wolfNet[p.id] ?? 0) > 0 && styles.skinNameBold]}>{p.name}</Text>
+                    </View>
+                    <Text style={[styles.skinAmt, (wolfNet[p.id] ?? 0) > 0 && styles.skinAmtGreen, (wolfNet[p.id] ?? 0) < 0 && styles.resultLose]}>
+                      {(wolfNet[p.id] ?? 0) >= 0 ? '+' : ''}{Math.round(wolfNet[p.id] ?? 0)}
+                    </Text>
+                  </View>
+                ))}
+            </Card>
+          </>
+        )}
+
         {is531 && five31Results.length === 3 && (
           <>
             <SectionLabel>5-3-1 Results</SectionLabel>

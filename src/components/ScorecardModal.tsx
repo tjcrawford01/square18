@@ -2,6 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Share } from 'react-native';
 import type { HoleInfo } from '../types/course';
 import { strokesOnHole } from '../engine/handicap';
+import { getWolfIndexForHole } from '../engine/wolf';
+import type { WolfDecisions } from '../store/roundStore';
 import { buildScorecardShareText, type ScorecardShareInput } from '../engine/settlement';
 import { Colors } from '../theme/colors';
 
@@ -13,12 +15,13 @@ interface PlayerLike {
 interface ScorecardModalProps {
   visible: boolean;
   onClose: () => void;
-  round: { tee: string; gameStyle: string };
+  round: { tee: string; gameStyle: string; numHoles?: string };
   courseName: string;
   players: PlayerLike[];
   scores: Record<number, Record<number, number>>;
   hcps: Record<number, number>;
   holes: HoleInfo[];
+  wolfDecisions?: WolfDecisions;
 }
 
 function scoreColor(gross: number, par: number): keyof typeof Colors {
@@ -39,6 +42,7 @@ export function ScorecardModal({
   scores,
   hcps,
   holes,
+  wolfDecisions,
 }: ScorecardModalProps) {
   const handleShare = () => {
     const input: ScorecardShareInput = { round, courseName, players, scores, hcps, holes };
@@ -47,7 +51,18 @@ export function ScorecardModal({
   };
 
   const gameLabel =
-    round.gameStyle === 'matchplay' ? 'Match Play' : round.gameStyle === 'fivethreeone' ? '5-3-1' : 'Skins';
+    round.gameStyle === 'matchplay' ? 'Match Play' : round.gameStyle === 'fivethreeone' ? '5-3-1' : round.gameStyle === 'wolf' ? 'Wolf' : 'Skins';
+
+  const getWolfRole = (holeNum: number, playerId: number): string | null => {
+    if (!wolfDecisions || round.gameStyle !== 'wolf') return null;
+    const d = wolfDecisions[holeNum];
+    if (!d) return null;
+    const wolfId = players[d.wolfIndex]?.id;
+    if (wolfId == null) return null;
+    if (playerId === wolfId) return d.isBlind ? '🐺🐺' : '🐺';
+    if (d.partnerId === playerId) return 'P';
+    return null;
+  };
 
   const renderTable = (start: number, end: number, showOutTotal: boolean) => {
     const slice = holes.slice(start, end);
@@ -76,6 +91,7 @@ export function ScorecardModal({
               const gross = scores[p.id]?.[h.hole];
               const stroke = gross != null && strokesOnHole(hcps[p.id] ?? 0, h.si) > 0;
               const color = gross != null ? scoreColor(gross, h.par) : 'gray';
+              const wolfRole = getWolfRole(h.hole, p.id);
               return (
                 <View key={p.id} style={styles.cellPlayer}>
                   {gross != null ? (
@@ -86,6 +102,7 @@ export function ScorecardModal({
                   ) : (
                     <Text style={styles.scoreBlank}>—</Text>
                   )}
+                  {wolfRole != null && <Text style={styles.wolfRole}>{wolfRole}</Text>}
                 </View>
               );
             })}
@@ -220,4 +237,5 @@ const styles = StyleSheet.create({
   scoreBlank: { color: Colors.gray, fontSize: 13 },
   strokeDot: { fontSize: 8, color: Colors.forest },
   totalText: { fontWeight: '700', color: Colors.ink },
+  wolfRole: { fontSize: 9, color: Colors.gray, marginLeft: 2 },
 });

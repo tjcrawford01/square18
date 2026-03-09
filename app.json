@@ -22,8 +22,7 @@
           "venmo"
         ],
         "ITSAppUsesNonExemptEncryption": false
-      },
-      "buildNumber": "2"
+      }
     },
     "android": {
       "package": "com.square18.app",

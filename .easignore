@@ -1,0 +1,13 @@
+# EAS uses this to exclude files from the build upload (smaller = faster)
+node_modules/
+.expo/
+.git/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+scripts/
+square18-cursor-prompt.md
+square18-v4.jsx
+*.tsbuildinfo

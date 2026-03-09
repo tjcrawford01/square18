@@ -36,7 +36,7 @@ export function iMessageLink(body: string): string {
 
 export interface SettlementRoundLike {
   tee: string;
-  gameStyle: 'matchplay' | 'skins' | 'fivethreeone';
+  gameStyle: 'matchplay' | 'skins' | 'fivethreeone' | 'wolf';
   players: { id: number; name: string; initials: string; venmo?: string }[];
   teams: { id: number; playerIds: number[] }[];
   stakes: { front: number; back: number; total: number };
@@ -61,6 +61,7 @@ export interface SettlementTextOptions {
   sbNet?: Record<number, number>;
   birdieCounts?: Record<number, number>;
   five31Results?: Five31ResultLike[];
+  wolfNet?: Record<number, number>;
 }
 
 /** One transfer: fromId owes toId amount (rounded whole dollars). */
@@ -120,8 +121,9 @@ export function buildSettlementText(
   const sbNet = options.sbNet ?? {};
   const birdieCounts = options.birdieCounts ?? {};
   const five31Results = options.five31Results ?? [];
+  const wolfNet = options.wolfNet ?? {};
   const gameLabel =
-    round.gameStyle === 'matchplay' ? 'Match Play' : round.gameStyle === 'fivethreeone' ? '5-3-1' : 'Skins';
+    round.gameStyle === 'matchplay' ? 'Match Play' : round.gameStyle === 'fivethreeone' ? '5-3-1' : round.gameStyle === 'wolf' ? 'Wolf' : 'Skins';
   const courseName = round.courseName || 'Course';
   const lines: string[] = [
     `⛳ Square18 — ${courseName}`,
@@ -165,6 +167,19 @@ export function buildSettlementText(
       const winner = p.result > 0 ? t1 : p.result < 0 ? t2 : 'Tied';
       lines.push(`🔁 Press H${p.startHole}-${p.endHole ?? p.startHole}: ${winner} ($${Math.abs(p.amt)})`);
     });
+  }
+
+  if (round.gameStyle === 'wolf' && Object.keys(wolfNet).length > 0) {
+    round.players
+      .slice()
+      .sort((a, b) => (wolfNet[b.id] ?? 0) - (wolfNet[a.id] ?? 0))
+      .forEach((p) => {
+        const net = Math.round(wolfNet[p.id] ?? 0);
+        const name = p.id === scorekeeperId ? 'You' : p.name;
+        const line = net >= 0 ? `${name}: +$${net}` : `${name}: -$${Math.abs(net)}`;
+        lines.push(line);
+      });
+    lines.push('');
   }
 
   if (round.gameStyle === 'skins' && skinsSettlement) {

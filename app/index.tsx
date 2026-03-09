@@ -9,8 +9,6 @@ import {
   ScrollView,
   Modal,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -193,7 +191,7 @@ export default function SplashScreen() {
             By continuing, you agree to use this app for personal, non-commercial use only.
           </Text>
         </View>
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 24) }]}>
           <Pressable style={styles.button} onPress={acceptDisclaimer}>
             <Text style={styles.buttonText}>Got it — let's play ⛳</Text>
           </Pressable>
@@ -203,11 +201,7 @@ export default function SplashScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
-    >
+    <View style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.emoji}>⛳</Text>
         <Text style={styles.title}>Square18</Text>
@@ -238,7 +232,7 @@ export default function SplashScreen() {
                 ) : displayList.length === 0 && searchQuery.length >= SEARCH_MIN_LEN ? (
                   <Text style={styles.noResults}>No courses found — try a different spelling</Text>
                 ) : (
-                  <ScrollView style={styles.listScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                  <ScrollView style={styles.listScroll} nestedScrollEnabled>
                     {displayList.map((item) => (
                       <Pressable
                         key={item.id}
@@ -323,7 +317,7 @@ export default function SplashScreen() {
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

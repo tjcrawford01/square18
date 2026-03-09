@@ -45,17 +45,22 @@ export function HamburgerMenu({ showViewScorecard, onViewScorecard, renderTrigge
       <Modal visible={menuVisible} transparent animationType="fade">
         <Pressable style={styles.menuOverlay} onPress={closeMenu}>
           <View style={styles.menuDropdown}>
-            <Pressable style={styles.menuItem} onPress={openFeedback}>
-              <Text style={styles.menuItemText}>Feedback</Text>
-            </Pressable>
             {showViewScorecard && onViewScorecard && (
               <Pressable style={styles.menuItem} onPress={handleViewScorecard}>
                 <Text style={styles.menuItemText}>View Scorecard</Text>
               </Pressable>
             )}
+            <Pressable style={styles.menuItem} onPress={openGameRules}>
+              <Text style={styles.menuItemText}>Game Rules 📖</Text>
+            </Pressable>
+            <Pressable style={styles.menuItem} onPress={openFeedback}>
+              <Text style={styles.menuItemText}>Feedback</Text>
+            </Pressable>
           </View>
         </Pressable>
       </Modal>
+
+      <GameRulesModal visible={gameRulesVisible} onClose={() => setGameRulesVisible(false)} />
 
       <Modal visible={feedbackVisible} transparent animationType="slide">
         <Pressable style={styles.sheetOverlay} onPress={() => setFeedbackVisible(false)}>
