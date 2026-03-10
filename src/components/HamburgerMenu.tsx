@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Modal, TextInput, Linking, KeyboardAvoidingView, Platform } from 'react-native';
 import { Colors } from '../theme/colors';
 import { GameRulesModal } from './GameRulesModal';
+import { HistoryModal } from './HistoryModal';
 
 const FEEDBACK_EMAIL = 'feedback@square18.app';
 const FEEDBACK_SUBJECT = 'Square18 Feedback';
@@ -13,12 +14,17 @@ interface HamburgerMenuProps {
   onOpenGameRules?: () => void;
   /** Render prop: (openMenu) => element to show as the hamburger button */
   renderTrigger: (openMenu: () => void) => React.ReactNode;
+  /** Show "End Round" when round is in progress */
+  showEndRound?: boolean;
+  /** Called when End Round is tapped (after user confirms) */
+  onEndRound?: () => void;
 }
 
-export function HamburgerMenu({ showViewScorecard, onViewScorecard, onOpenGameRules, renderTrigger }: HamburgerMenuProps) {
+export function HamburgerMenu({ showViewScorecard, onViewScorecard, onOpenGameRules, renderTrigger, showEndRound, onEndRound }: HamburgerMenuProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [feedbackVisible, setFeedbackVisible] = useState(false);
   const [gameRulesVisible, setGameRulesVisible] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
 
   const openMenu = () => setMenuVisible(true);
@@ -51,6 +57,16 @@ export function HamburgerMenu({ showViewScorecard, onViewScorecard, onOpenGameRu
     }
   };
 
+  const openHistory = () => {
+    closeMenu();
+    setHistoryVisible(true);
+  };
+
+  const handleEndRound = () => {
+    closeMenu();
+    onEndRound?.();
+  };
+
   return (
     <>
       {renderTrigger(openMenu)}
@@ -66,6 +82,14 @@ export function HamburgerMenu({ showViewScorecard, onViewScorecard, onOpenGameRu
             <Pressable style={styles.menuItem} onPress={openGameRules}>
               <Text style={styles.menuItemText}>Game Rules 📖</Text>
             </Pressable>
+            <Pressable style={styles.menuItem} onPress={openHistory}>
+              <Text style={styles.menuItemText}>History 📊</Text>
+            </Pressable>
+            {showEndRound && onEndRound && (
+              <Pressable style={styles.menuItem} onPress={handleEndRound}>
+                <Text style={styles.menuItemText}>End Round ⛳</Text>
+              </Pressable>
+            )}
             <Pressable style={styles.menuItem} onPress={openFeedback}>
               <Text style={styles.menuItemText}>Feedback</Text>
             </Pressable>
@@ -76,6 +100,8 @@ export function HamburgerMenu({ showViewScorecard, onViewScorecard, onOpenGameRu
       {!onOpenGameRules && (
         <GameRulesModal visible={gameRulesVisible} onClose={() => setGameRulesVisible(false)} />
       )}
+
+      <HistoryModal visible={historyVisible} onClose={() => setHistoryVisible(false)} />
 
       <Modal visible={feedbackVisible} transparent animationType="slide">
         <Pressable style={styles.sheetOverlay} onPress={() => setFeedbackVisible(false)}>

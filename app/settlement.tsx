@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Alert, Share } from 'react-native';
 import { useRouter } from 'expo-router';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRoundStore } from '../src/store/roundStore';
 import { useCourseStore } from '../src/store/courseStore';
 import { getTeeOrDefault, getHolesForTee } from '../src/types/course';
@@ -12,13 +15,22 @@ import { computeFiveThreeOne, fiveThreeOneSettlement } from '../src/engine/fiveT
 import { calculateWolf } from '../src/engine/wolf';
 import { countBirdies } from '../src/engine/birdies';
 import { computeSideBetNet } from '../src/engine/sideBets';
+import { getBiggestMoment, getBiggestChoke, getMomentumSwing } from '../src/engine/highlights';
 import { buildSettlementText, buildScorecardShareText, minTransactions, venmoDeepLink, venmoLink, iMessageLink } from '../src/engine/settlement';
 import { Card } from '../src/components/Card';
 import { SectionLabel } from '../src/components/SectionLabel';
+import { ShareableResultsCard } from '../src/components/ShareableResultsCard';
 import { Colors } from '../src/theme/colors';
+
+function formatShareDate(d: Date): string {
+  const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  return `${days[d.getDay()]} ${months[d.getMonth()]} ${d.getDate()}`;
+}
 
 export default function SettlementScreen() {
   const router = useRouter();
+  const viewShotRef = useRef<ViewShot>(null);
   const { round, sideBetWinners, setSideBetWinner, resetRound } = useRoundStore();
   const selectedCourse = useCourseStore((s) => s.selectedCourse);
 
@@ -189,8 +201,68 @@ export default function SettlementScreen() {
     Share.share({ message, title: 'Scorecard' });
   };
 
+  const totalPot = Math.round(
+    Object.values(netPerPlayer).reduce((sum, n) => sum + Math.max(0, n), 0)
+  );
+  const highlights = [
+    getBiggestMoment(round.players, round.scores, holes),
+    getBiggestChoke(round.players, round.scores, holes, hcps),
+    getMomentumSwing(round.players, round.scores, holes, round.gameStyle, {
+      t1ids: t1,
+      t2ids: t2,
+      hcps,
+      skinResults: skinsSettlement?.skinResults,
+    }),
+  ];
+
+  useEffect(() => {
+    const entry = {
+      date: new Date().toISOString(),
+      courseName: selectedCourse?.name ?? 'Course',
+      gameStyle: round.gameStyle,
+      players: round.players.map((p) => ({
+        name: p.name,
+        netAmount: netPerPlayer[p.id] ?? 0,
+      })),
+      totalPot,
+    };
+    AsyncStorage.setItem(`history:${Date.now()}`, JSON.stringify(entry));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- save once on mount
+  }, []);
+
+  const handleShareImage = async () => {
+    try {
+      if (!viewShotRef.current) return;
+      const uri = await viewShotRef.current.capture?.();
+      if (!uri) return;
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('Sharing unavailable', 'Sharing is not available on this device.');
+        return;
+      }
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Share Match Results',
+      });
+    } catch (err) {
+      Alert.alert('Share failed', (err as Error).message ?? 'Could not share image.');
+    }
+  };
+
   return (
     <View style={styles.container}>
+      <View style={styles.offScreen}>
+        <ViewShot ref={viewShotRef} options={{ format: 'png', width: 1080, height: 1080, result: 'tmpfile' }}>
+          <ShareableResultsCard
+            date={formatShareDate(new Date())}
+            courseName={selectedCourse?.name ?? 'Course'}
+            players={round.players}
+            netPerPlayer={netPerPlayer}
+            gameStyle={round.gameStyle}
+            highlights={highlights}
+          />
+        </ViewShot>
+      </View>
       <View style={styles.hero}>
         <Text style={styles.heroEmoji}>⛳</Text>
         <Text style={styles.heroTitle}>You're Square.</Text>
@@ -526,6 +598,9 @@ export default function SettlementScreen() {
           <Pressable style={styles.sendBtn} onPress={openiMessage}>
             <Text style={styles.sendBtnText}>📱 Send Group Settlement Text</Text>
           </Pressable>
+          <Pressable style={styles.shareResultsBtn} onPress={handleShareImage}>
+            <Text style={styles.shareResultsBtnText}>Share Results 📸</Text>
+          </Pressable>
           <View style={styles.preview}>
             <Text style={styles.previewLabel}>PREVIEW</Text>
             <Text style={styles.previewText}>{msgText}</Text>
@@ -650,6 +725,22 @@ const styles = StyleSheet.create({
     borderBottomColor: '#8a6a20',
   },
   sendBtnText: { fontSize: 17, fontWeight: '700', color: Colors.ink },
+  shareResultsBtn: {
+    width: '100%',
+    marginTop: 10,
+    paddingVertical: 14,
+    backgroundColor: Colors.forest,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderBottomWidth: 3,
+    borderBottomColor: Colors.gold,
+  },
+  shareResultsBtnText: { fontSize: 16, fontWeight: '700', color: Colors.cream },
+  offScreen: {
+    position: 'absolute',
+    left: -9999,
+    top: 0,
+  },
   preview: { marginTop: 8, backgroundColor: Colors.parchment, borderRadius: 8, padding: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: Colors.sand },
   previewLabel: { fontSize: 10, color: Colors.gray, marginBottom: 6, letterSpacing: 1 },
   previewText: { fontSize: 11, color: Colors.ink, lineHeight: 18 },

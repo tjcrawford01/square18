@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, Modal } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useRoundStore } from '../../src/store/roundStore';
 import { useCourseStore } from '../../src/store/courseStore';
@@ -78,6 +78,7 @@ export default function HoleScreen() {
   };
 
   const allScored = round.players.every((p) => scores[p.id]?.[holeNum] != null);
+  const hasAnyScores = Object.values(scores).some((s) => s && Object.keys(s).length > 0);
   const sideBetsHere = round.sideBets.filter((sb) => sb.hole === holeNum);
   const skinResults = round.gameStyle === 'skins' ? computeSkins(scores, hcps, round.players.map((p) => p.id), holes) : [];
   const carryHere = skinResults.find((r) => r.hole === holeNum)?.carryover ?? 0;
@@ -145,6 +146,17 @@ export default function HoleScreen() {
         <HamburgerMenu
           showViewScorecard
           onViewScorecard={() => setScorecardVisible(true)}
+          showEndRound={hasAnyScores}
+          onEndRound={() =>
+            Alert.alert(
+              'End this round?',
+              "You'll go to settlement with scores so far.",
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'End Round', onPress: () => router.replace('/settlement') },
+              ]
+            )
+          }
           renderTrigger={(openMenu) => (
             <Pressable onPress={openMenu} style={styles.hamburgerBtn} hitSlop={8}>
               <Text style={styles.hamburgerText}>≡</Text>
