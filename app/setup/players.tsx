@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRoundStore } from '../../src/store/roundStore';
 import { NavBar } from '../../src/components/NavBar';
@@ -56,13 +56,9 @@ export default function PlayersScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
-    >
+    <View style={styles.container}>
       <NavBar title="Players & Handicaps" subtitle="Step 1 of 3" onBack={() => router.back()} />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <SectionLabel>Who's playing?</SectionLabel>
         {players.map((p, i) => (
           <Card key={p.id} accent={editing === p.id ? Colors.gold : Colors.grayLight}>
@@ -145,9 +141,9 @@ export default function PlayersScreen() {
         )}
         <View style={styles.note}>
           <Text style={styles.noteText}>
-            {players.length === 2
+            {safePlayers.length === 2
               ? '1v1 Nassau — each player is their own team.'
-              : players.length === 3
+              : safePlayers.length === 3
                 ? '3 players — skins only (no match play).'
                 : '4 players — 2v2 teams assigned on next screen.'}
           </Text>
@@ -156,7 +152,7 @@ export default function PlayersScreen() {
       <View style={styles.footer}>
         <PrimaryBtn label="Choose Game →" onPress={() => router.push('/setup/game')} />
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

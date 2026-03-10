@@ -15,6 +15,7 @@ interface NavBarProps {
 }
 
 export function NavBar({ title, subtitle, onBack, rightEl, showViewScorecard, onViewScorecard }: NavBarProps) {
+  console.log('[NavBar] Rendering', title);
   const router = useRouter();
 
   const handleBack = () => {

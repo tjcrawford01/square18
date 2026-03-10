@@ -191,7 +191,7 @@ export default function SplashScreen() {
             By continuing, you agree to use this app for personal, non-commercial use only.
           </Text>
         </View>
-        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 24) }]}>
+        <View style={styles.footer}>
           <Pressable style={styles.button} onPress={acceptDisclaimer}>
             <Text style={styles.buttonText}>Got it — let's play ⛳</Text>
           </Pressable>
@@ -279,7 +279,11 @@ export default function SplashScreen() {
       <View style={styles.footer}>
         <Pressable
           style={[styles.button, !canStart && styles.buttonDisabled]}
-          onPress={() => canStart && router.push('/setup/players')}
+          onPress={() => {
+            if (!canStart) return;
+            console.log('[Splash] Navigating to /setup/players, selectedCourse:', !!selectedCourse);
+            router.push('/setup/players');
+          }}
           disabled={!canStart}
         >
           <Text style={[styles.buttonText, !canStart && styles.buttonTextDisabled]}>

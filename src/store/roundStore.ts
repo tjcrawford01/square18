@@ -22,20 +22,9 @@ export interface SideBet {
   amount: number;
 }
 
-export type NumHoles = '18' | 'front9' | 'back9';
-
-export interface WolfDecision {
-  wolfIndex: number;
-  partnerId: number | null;
-  isBlind: boolean;
-}
-
-export type WolfDecisions = Record<number, WolfDecision>;
-
 export interface RoundConfig {
-  gameStyle: 'matchplay' | 'skins' | 'fivethreeone' | 'wolf';
+  gameStyle: 'matchplay' | 'skins' | 'fivethreeone';
   tee: string;
-  numHoles: NumHoles;
   stakes: { front: number; back: number; total: number };
   skinValue: number;
   autoPress: boolean;
@@ -45,8 +34,6 @@ export interface RoundConfig {
   five31Mode?: 'perPoint' | 'fixedPot';
   /** 5-3-1 only: dollars per point or total pot $ */
   five31Value?: number;
-  /** Wolf only: stake per hole */
-  wolfValue?: number;
 }
 
 export type Scores = Record<number, Record<number, number>>;
@@ -83,14 +70,12 @@ interface RoundState {
   round: RoundConfig & { players: Player[]; teams: Team[]; scores: Scores };
   scores: Scores;
   sideBetWinners: Record<number, number>;
-  wolfDecisions: WolfDecisions;
   currentHole: number;
   setPlayers: (players: Player[] | ((prev: Player[]) => Player[])) => void;
   setTeams: (teams: Team[] | ((prev: Team[]) => Team[])) => void;
   setRound: (round: Partial<RoundState['round']> | ((prev: RoundState['round']) => RoundState['round'])) => void;
   setScores: (scores: Scores | ((prev: Scores) => Scores)) => void;
   setSideBetWinner: (sideBetId: number, playerId: number | undefined) => void;
-  setWolfDecision: (hole: number, decision: WolfDecision) => void;
   setCurrentHole: (hole: number) => void;
   startRound: () => void;
   resetRound: () => void;
@@ -99,7 +84,6 @@ interface RoundState {
 const defaultRound: RoundConfig & { players: Player[]; teams: Team[]; scores: Scores } = {
   gameStyle: 'matchplay',
   tee: 'Blue',
-  numHoles: '18',
   stakes: { front: 10, back: 10, total: 20 },
   skinValue: 5,
   autoPress: true,
@@ -120,7 +104,6 @@ export const useRoundStore = create<RoundState>()(
       round: { ...defaultRound },
       scores: {},
       sideBetWinners: {},
-      wolfDecisions: {},
       currentHole: 1,
 
       setPlayers: (players) =>
@@ -149,11 +132,6 @@ export const useRoundStore = create<RoundState>()(
           sideBetWinners: { ...s.sideBetWinners, [sideBetId]: playerId ?? undefined },
         })),
 
-      setWolfDecision: (hole, decision) =>
-        set((s) => ({
-          wolfDecisions: { ...s.wolfDecisions, [hole]: decision },
-        })),
-
       setCurrentHole: (currentHole) => set({ currentHole }),
 
       startRound: () =>
@@ -180,7 +158,6 @@ export const useRoundStore = create<RoundState>()(
           round: { ...defaultRound, players: DEFAULT_PLAYERS, teams: DEFAULT_TEAMS, sideBets: [], scores: {} },
           scores: {},
           sideBetWinners: {},
-          wolfDecisions: {},
           currentHole: 1,
         }),
     }),
@@ -193,9 +170,27 @@ export const useRoundStore = create<RoundState>()(
         round: s.round,
         scores: s.scores,
         sideBetWinners: s.sideBetWinners,
-        wolfDecisions: s.wolfDecisions,
         currentHole: s.currentHole,
       }),
+      merge: (persistedState, currentState) => {
+        console.log('[RoundStore] Merging persisted state', !!persistedState);
+        const merged = { ...currentState, ...(persistedState as object) };
+        if (!Array.isArray(merged.players) || merged.players.length < 2) {
+          console.log('[RoundStore] Invalid players in persisted state, using defaults');
+          merged.players = currentState.players;
+        }
+        if (!Array.isArray(merged.teams)) {
+          merged.teams = buildDefaultTeams(merged.players);
+        }
+        if (!merged.round || typeof merged.round !== 'object') {
+          merged.round = { ...defaultRound, players: merged.players, teams: merged.teams };
+        }
+        return merged;
+      },
+      onRehydrateStorage: () => (state, err) => {
+        if (err) console.error('[RoundStore] Rehydration error:', err);
+        else console.log('[RoundStore] Rehydration complete, players:', state?.players?.length);
+      },
     }
   )
 );
