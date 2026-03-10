@@ -23,28 +23,29 @@ function initialsFromName(name: string): string {
 export default function PlayersScreen() {
   const router = useRouter();
   const { players, setPlayers } = useRoundStore();
+  const safePlayers = Array.isArray(players) ? players : [];
   const [editing, setEditing] = useState<number | null>(null);
   const [editingHcp, setEditingHcp] = useState<{ playerId: number; value: string } | null>(null);
 
   const updatePlayer = (id: number, field: keyof Player, value: string | number) => {
     setPlayers((ps) =>
-      ps.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+      (Array.isArray(ps) ? ps : []).map((p) => (p.id === id ? { ...p, [field]: value } : p))
     );
   };
 
   const addPlayer = () => {
-    if (players.length >= 4) return;
+    if (safePlayers.length >= 4) return;
     const id = Date.now();
-    const n = players.length + 1;
+    const n = safePlayers.length + 1;
     setPlayers((ps) => [
-      ...ps,
+      ...(Array.isArray(ps) ? ps : []),
       { id, name: `Player ${n}`, initials: `P${n}`, index: 0, venmo: '' },
     ]);
   };
 
   const removePlayer = (id: number) => {
-    if (players.length <= 2) return;
-    setPlayers((ps) => ps.filter((p) => p.id !== id));
+    if (safePlayers.length <= 2) return;
+    setPlayers((ps) => (Array.isArray(ps) ? ps : []).filter((p) => p.id !== id));
   };
 
   const handleNameBlur = (p: Player, text: string) => {
@@ -60,7 +61,7 @@ export default function PlayersScreen() {
       <NavBar title="Players & Handicaps" subtitle="Step 1 of 3" onBack={() => router.back()} />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <SectionLabel>Who's playing?</SectionLabel>
-        {players.map((p, i) => (
+        {safePlayers.map((p, i) => (
           <Card key={p.id} accent={editing === p.id ? Colors.gold : Colors.grayLight}>
             <View style={styles.cardInner}>
               <View
@@ -125,7 +126,7 @@ export default function PlayersScreen() {
                 <Pressable onPress={() => setEditing(p.id)}>
                   <Text style={styles.editBtn}>✎</Text>
                 </Pressable>
-                {players.length > 2 && (
+                {safePlayers.length > 2 && (
                   <Pressable onPress={() => removePlayer(p.id)}>
                     <Text style={styles.removeBtn}>×</Text>
                   </Pressable>
@@ -134,9 +135,9 @@ export default function PlayersScreen() {
             </View>
           </Card>
         ))}
-        {players.length < 4 && (
+        {safePlayers.length < 4 && (
           <Pressable style={styles.addBtn} onPress={addPlayer}>
-            <Text style={styles.addBtnText}>+ Add Player ({players.length}/4)</Text>
+            <Text style={styles.addBtnText}>+ Add Player ({safePlayers.length}/4)</Text>
           </Pressable>
         )}
         <View style={styles.note}>
