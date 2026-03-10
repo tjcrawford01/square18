@@ -3,15 +3,18 @@ import { Stack } from 'expo-router';
 import { StatusBar, StyleSheet } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../src/theme/colors';
+import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <StatusBar barStyle="light-content" />
-        <Stack screenOptions={{ headerShown: false }} />
-      </SafeAreaView>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+          <StatusBar barStyle="light-content" />
+          <Stack screenOptions={{ headerShown: false }} />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 

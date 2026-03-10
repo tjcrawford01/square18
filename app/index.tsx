@@ -281,8 +281,17 @@ export default function SplashScreen() {
           style={[styles.button, !canStart && styles.buttonDisabled]}
           onPress={() => {
             if (!canStart) return;
-            console.log('[Splash] Navigating to /setup/players, selectedCourse:', !!selectedCourse);
-            router.push('/setup/players');
+            try {
+              router.push('/setup/players');
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              const stack = err instanceof Error ? err.stack : '';
+              Alert.alert(
+                'Navigation Error',
+                `Could not start round:\n\n${msg}${stack ? `\n\n${stack.slice(0, 200)}...` : ''}`,
+                [{ text: 'OK' }]
+              );
+            }
           }}
           disabled={!canStart}
         >
