@@ -22,9 +22,18 @@ export interface SideBet {
   amount: number;
 }
 
+export interface WolfDecision {
+  wolfIndex: number;
+  partnerId: number | null;
+  isBlind: boolean;
+}
+
+export type WolfDecisions = Record<number, WolfDecision>;
+
 export interface RoundConfig {
-  gameStyle: 'matchplay' | 'skins' | 'fivethreeone';
+  gameStyle: 'matchplay' | 'skins' | 'fivethreeone' | 'wolf';
   tee: string;
+  numHoles?: '18' | 'front9' | 'back9';
   stakes: { front: number; back: number; total: number };
   skinValue: number;
   autoPress: boolean;
@@ -34,6 +43,10 @@ export interface RoundConfig {
   five31Mode?: 'perPoint' | 'fixedPot';
   /** 5-3-1 only: dollars per point or total pot $ */
   five31Value?: number;
+  /** Wolf only: stake per hole */
+  wolfValue?: number;
+  /** Wolf only: decisions per hole */
+  wolfDecisions?: WolfDecisions;
 }
 
 export type Scores = Record<number, Record<number, number>>;
@@ -77,11 +90,12 @@ interface RoundState {
   setScores: (scores: Scores | ((prev: Scores) => Scores)) => void;
   setSideBetWinner: (sideBetId: number, playerId: number | undefined) => void;
   setCurrentHole: (hole: number) => void;
+  setWolfDecision: (hole: number, decision: WolfDecision) => void;
   startRound: () => void;
   resetRound: () => void;
 }
 
-const defaultRound: RoundConfig & { players: Player[]; teams: Team[]; scores: Scores } = {
+const defaultRound: RoundConfig & { players: Player[]; teams: Team[]; scores: Scores; wolfDecisions?: WolfDecisions } = {
   gameStyle: 'matchplay',
   tee: 'Blue',
   stakes: { front: 10, back: 10, total: 20 },
@@ -94,6 +108,7 @@ const defaultRound: RoundConfig & { players: Player[]; teams: Team[]; scores: Sc
   players: DEFAULT_PLAYERS,
   teams: DEFAULT_TEAMS,
   scores: {},
+  wolfDecisions: {},
 };
 
 export const useRoundStore = create<RoundState>()(
@@ -134,6 +149,15 @@ export const useRoundStore = create<RoundState>()(
 
       setCurrentHole: (currentHole) => set({ currentHole }),
 
+      setWolfDecision: (hole, decision) =>
+        set((s) => ({
+          round: {
+            ...s.round,
+            wolfDecisions: { ...(s.round.wolfDecisions ?? {}), [hole]: decision },
+          },
+        })),
+
+
       startRound: () =>
         set((s) => {
           const finalTeams = s.players.length === 4 ? s.teams : buildDefaultTeams(s.players);
@@ -145,6 +169,7 @@ export const useRoundStore = create<RoundState>()(
               players: s.players,
               teams: finalTeams,
               scores: freshScores,
+              wolfDecisions: {},
             },
             currentHole: 1,
             scores: freshScores,
@@ -167,7 +192,7 @@ export const useRoundStore = create<RoundState>()(
       partialize: (s) => ({
         players: s.players,
         teams: s.teams,
-        round: s.round,
+        round: { ...s.round, wolfDecisions: s.round.wolfDecisions ?? {} },
         scores: s.scores,
         sideBetWinners: s.sideBetWinners,
         currentHole: s.currentHole,
@@ -185,6 +210,7 @@ export const useRoundStore = create<RoundState>()(
         if (!merged.round || typeof merged.round !== 'object') {
           merged.round = { ...defaultRound, players: merged.players, teams: merged.teams };
         }
+        merged.round.wolfDecisions = merged.round.wolfDecisions ?? {};
         return merged;
       },
       onRehydrateStorage: () => (state, err) => {

@@ -21,8 +21,10 @@ export default function GameScreen() {
   const tee = getTeeOrDefault(selectedCourse, round.tee);
   const isMatchPlay = round.gameStyle === 'matchplay';
   const is531 = round.gameStyle === 'fivethreeone';
+  const isWolf = round.gameStyle === 'wolf';
   const matchPlayDisabled = players.length === 3;
   const show531 = players.length === 3;
+  const showWolf = players.length === 3 || players.length === 4;
 
   useEffect(() => {
     if (players.length === 3 && round.gameStyle === 'matchplay') {
@@ -75,15 +77,19 @@ export default function GameScreen() {
             { id: 'matchplay', icon: '🏆', label: 'Match Play', desc: players.length === 2 ? '1v1 Nassau' : '2v2 Best Ball Nassau', disabled: matchPlayDisabled },
             { id: 'skins', icon: '💰', label: 'Skins', desc: 'Win holes, carry ties', disabled: false },
             ...(show531 ? [{ id: 'fivethreeone', icon: '🎯', label: '5-3-1', desc: 'Low/mid/high net get 5-3-1 pts', disabled: false }] : []),
+            ...(showWolf ? [{ id: 'wolf', icon: '🐺', label: 'Wolf', desc: 'Pick partner or go alone', disabled: false }] : []),
           ].map((g: { id: string; icon: string; label: string; desc: string; disabled: boolean }) => (
             <Pressable
               key={g.id}
               onPress={() => {
                 if (g.disabled) return;
-                const updates: Partial<typeof round> = { gameStyle: g.id as 'matchplay' | 'skins' | 'fivethreeone' };
+                const updates: Partial<typeof round> = { gameStyle: g.id as 'matchplay' | 'skins' | 'fivethreeone' | 'wolf' };
                 if (g.id === 'fivethreeone' && (round.five31Mode == null || round.five31Value == null)) {
                   updates.five31Mode = round.five31Mode ?? 'perPoint';
                   updates.five31Value = round.five31Value ?? 1;
+                }
+                if (g.id === 'wolf' && round.wolfValue == null) {
+                  updates.wolfValue = 2;
                 }
                 setRound(updates);
               }}
@@ -255,7 +261,23 @@ export default function GameScreen() {
           </>
         )}
 
-        {!isMatchPlay && !is531 && (
+        {isWolf && (
+          <>
+            <SectionLabel>Wolf Stake (per hole)</SectionLabel>
+            <View style={styles.skinValueRow}>
+              <Text style={styles.dollarLarge}>$</Text>
+              <TextInput
+                style={styles.skinValueInput}
+                value={round.wolfValue != null ? String(round.wolfValue) : ''}
+                onChangeText={(t) => setRound({ wolfValue: parseInt(t, 10) || 0 })}
+                keyboardType="number-pad"
+              />
+              <Text style={styles.perSkin}>per hole</Text>
+            </View>
+          </>
+        )}
+
+        {!isMatchPlay && !is531 && !isWolf && (
           <>
             <SectionLabel>Skin Value</SectionLabel>
             <View style={styles.skinValueRow}>

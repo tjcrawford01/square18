@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Modal, TextInput, Linking, KeyboardAvoidingView, Platform } from 'react-native';
 import { Colors } from '../theme/colors';
+import { GameRulesModal } from './GameRulesModal';
 
 const FEEDBACK_EMAIL = 'feedback@square18.app';
 const FEEDBACK_SUBJECT = 'Square18 Feedback';
@@ -8,13 +9,16 @@ const FEEDBACK_SUBJECT = 'Square18 Feedback';
 interface HamburgerMenuProps {
   showViewScorecard?: boolean;
   onViewScorecard?: () => void;
+  /** Called when Game Rules is tapped; if not provided, GameRulesModal is shown internally */
+  onOpenGameRules?: () => void;
   /** Render prop: (openMenu) => element to show as the hamburger button */
   renderTrigger: (openMenu: () => void) => React.ReactNode;
 }
 
-export function HamburgerMenu({ showViewScorecard, onViewScorecard, renderTrigger }: HamburgerMenuProps) {
+export function HamburgerMenu({ showViewScorecard, onViewScorecard, onOpenGameRules, renderTrigger }: HamburgerMenuProps) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [feedbackVisible, setFeedbackVisible] = useState(false);
+  const [gameRulesVisible, setGameRulesVisible] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
 
   const openMenu = () => setMenuVisible(true);
@@ -36,6 +40,15 @@ export function HamburgerMenu({ showViewScorecard, onViewScorecard, renderTrigge
   const handleViewScorecard = () => {
     closeMenu();
     onViewScorecard?.();
+  };
+
+  const openGameRules = () => {
+    closeMenu();
+    if (onOpenGameRules) {
+      onOpenGameRules();
+    } else {
+      setGameRulesVisible(true);
+    }
   };
 
   return (
@@ -60,7 +73,9 @@ export function HamburgerMenu({ showViewScorecard, onViewScorecard, renderTrigge
         </Pressable>
       </Modal>
 
-      <GameRulesModal visible={gameRulesVisible} onClose={() => setGameRulesVisible(false)} />
+      {!onOpenGameRules && (
+        <GameRulesModal visible={gameRulesVisible} onClose={() => setGameRulesVisible(false)} />
+      )}
 
       <Modal visible={feedbackVisible} transparent animationType="slide">
         <Pressable style={styles.sheetOverlay} onPress={() => setFeedbackVisible(false)}>

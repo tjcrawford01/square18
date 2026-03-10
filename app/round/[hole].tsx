@@ -8,6 +8,7 @@ import { SIDE_BET_TYPES } from '../../src/data/sideBetTypes';
 import { courseHandicap, playingHandicaps, strokesOnHole } from '../../src/engine/handicap';
 import { computeSkins } from '../../src/engine/skins';
 import { computeFiveThreeOne } from '../../src/engine/fiveThreeOne';
+import { getWolfIndexForHole } from '../../src/engine/wolf';
 import { Card } from '../../src/components/Card';
 import { SectionLabel } from '../../src/components/SectionLabel';
 import { ScoreboardPanel } from '../../src/components/ScoreboardPanel';
@@ -27,14 +28,27 @@ export default function HoleScreen() {
   const params = useLocalSearchParams<{ hole: string }>();
   const holeNum = Math.min(18, Math.max(1, parseInt(params.hole ?? '1', 10) || 1));
   const router = useRouter();
-  const { round, scores, setScores, setCurrentHole, sideBetWinners, setSideBetWinner } = useRoundStore();
+  const { round, scores, setScores, setCurrentHole, sideBetWinners, setSideBetWinner, setWolfDecision } = useRoundStore();
+  const wolfDecisions = round.wolfDecisions ?? {};
   const selectedCourse = useCourseStore((s) => s.selectedCourse);
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [scorecardVisible, setScorecardVisible] = useState(false);
+  const [wolfPickerVisible, setWolfPickerVisible] = useState(false);
+
+  const isWolf = round.gameStyle === 'wolf';
+  const wolfIndex = isWolf ? getWolfIndexForHole(holeNum, round.players.length) : 0;
+  const wolfPlayer = isWolf ? round.players[wolfIndex] : null;
+  const wolfDecision = (round.wolfDecisions ?? {})[holeNum];
 
   useEffect(() => {
     setCurrentHole(holeNum);
   }, [holeNum, setCurrentHole]);
+
+  useEffect(() => {
+    if (isWolf && !wolfDecision && wolfPlayer) {
+      setWolfPickerVisible(true);
+    }
+  }, [isWolf, holeNum, wolfDecision, wolfPlayer]);
 
   const tee = getTeeOrDefault(selectedCourse, round.tee);
   const holes = getHolesForTee(selectedCourse, round.tee);
@@ -46,7 +60,7 @@ export default function HoleScreen() {
       courseHcps[p.id] = courseHandicap(p.index ?? 0, tee);
     });
   }
-  const hcps = playingHandicaps(courseHcps, round.gameStyle === 'matchplay');
+  const hcps = playingHandicaps(courseHcps, round.gameStyle === 'matchplay' || round.gameStyle === 'wolf');
 
   const setScore = (pid: number, score: number) => {
     const ns = {
@@ -106,6 +120,11 @@ export default function HoleScreen() {
 
   return (
     <View style={styles.container}>
+      {isWolf && wolfPlayer && (
+        <View style={styles.wolfBanner}>
+          <Text style={styles.wolfBannerText}>🐺 Wolf: {wolfPlayer.name}</Text>
+        </View>
+      )}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerLabel}>HOLE</Text>
@@ -220,7 +239,7 @@ export default function HoleScreen() {
         })}
       </ScrollView>
 
-      {holeNum > 1 && round.gameStyle !== 'fivethreeone' && (
+      {holeNum > 1 && round.gameStyle !== 'fivethreeone' && round.gameStyle !== 'wolf' && (
         <ScoreboardPanel round={round} scores={scores} hcps={hcps} currentHole={holeNum} holes={holes} />
       )}
       {holeNum > 1 && round.gameStyle === 'fivethreeone' && five31Results.length === 3 && (
@@ -256,15 +275,19 @@ export default function HoleScreen() {
         )}
         {holeNum < 18 ? (
           <Pressable
-            style={[styles.nextBtn, !allScored && styles.nextBtnDisabled]}
+            style={[styles.nextBtn, (!allScored || (isWolf && !wolfDecision)) && styles.nextBtnDisabled]}
             onPress={goNext}
-            disabled={!allScored}
+            disabled={!allScored || (isWolf && !wolfDecision)}
           >
-            <Text style={[styles.nextBtnText, !allScored && styles.nextBtnTextDisabled]}>Next Hole →</Text>
+            <Text style={[styles.nextBtnText, (!allScored || (isWolf && !wolfDecision)) && styles.nextBtnTextDisabled]}>Next Hole →</Text>
           </Pressable>
         ) : (
-          <Pressable style={styles.finishBtn} onPress={() => router.replace('/settlement')}>
-            <Text style={styles.finishBtnText}>Finish Round ⛳</Text>
+          <Pressable
+            style={[styles.finishBtn, (isWolf && !wolfDecision) && styles.nextBtnDisabled]}
+            onPress={() => router.replace('/settlement')}
+            disabled={isWolf && !wolfDecision}
+          >
+            <Text style={[styles.finishBtnText, (isWolf && !wolfDecision) && styles.nextBtnTextDisabled]}>Finish Round ⛳</Text>
           </Pressable>
         )}
       </View>
@@ -272,13 +295,56 @@ export default function HoleScreen() {
       <ScorecardModal
         visible={scorecardVisible}
         onClose={() => setScorecardVisible(false)}
-        round={{ tee: round.tee, gameStyle: round.gameStyle }}
+        round={{ tee: round.tee, gameStyle: round.gameStyle, numHoles: round.numHoles }}
         courseName={selectedCourse?.name ?? 'Course'}
         players={round.players}
         scores={scores}
         hcps={hcps}
         holes={holes}
+        wolfDecisions={round.gameStyle === 'wolf' ? wolfDecisions : undefined}
       />
+      <Modal visible={wolfPickerVisible && isWolf && !wolfDecision} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => {}}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalEmoji}>🐺</Text>
+            <Text style={styles.modalSubtitle}>HOLE {holeNum}</Text>
+            <Text style={styles.modalTitle}>You are the Wolf on this hole, {wolfPlayer?.name}</Text>
+            <Text style={styles.modalPot}>Pick a partner or go alone</Text>
+            {round.players
+              .filter((p) => p.id !== wolfPlayer?.id)
+              .map((p) => (
+                <Pressable
+                  key={p.id}
+                  style={styles.winnerBtn}
+                  onPress={() => {
+                    setWolfDecision(holeNum, { wolfIndex, partnerId: p.id, isBlind: false });
+                    setWolfPickerVisible(false);
+                  }}
+                >
+                  <Text style={styles.winnerBtnText}>Pick {p.name}</Text>
+                </Pressable>
+              ))}
+            <Pressable
+              style={styles.wolfLoneBtn}
+              onPress={() => {
+                setWolfDecision(holeNum, { wolfIndex, partnerId: null, isBlind: false });
+                setWolfPickerVisible(false);
+              }}
+            >
+              <Text style={styles.winnerBtnText}>Lone Wolf 🐺</Text>
+            </Pressable>
+            <Pressable
+              style={styles.wolfBlindBtn}
+              onPress={() => {
+                setWolfDecision(holeNum, { wolfIndex, partnerId: null, isBlind: true });
+                setWolfPickerVisible(false);
+              }}
+            >
+              <Text style={styles.winnerBtnText}>Blind Wolf 🐺🐺</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
       <Modal visible={popup != null} transparent animationType="slide">
         <Pressable style={styles.modalOverlay} onPress={() => {}}>
           <View style={[styles.modalSheet, popup?.mode === 'winner' && styles.modalSheetCream]}>
@@ -417,6 +483,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   carryBannerText: { fontSize: 12, fontWeight: '700', color: Colors.cream },
+  wolfBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.forest,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.gold,
+  },
+  wolfBannerText: { fontSize: 14, fontWeight: '700', color: Colors.gold },
+  wolfLoneBtn: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: Colors.gold,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  wolfBlindBtn: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: Colors.red,
+    alignItems: 'center',
+  },
   scroll: { flex: 1 },
   scrollContent: { padding: 14, paddingHorizontal: 20 },
   scoreCard: { marginBottom: 10 },
