@@ -8,7 +8,7 @@ import { Colors } from '../theme/colors';
 
 interface RoundLike {
   gameStyle: 'matchplay' | 'skins';
-  players: { id: number; initials: string }[];
+  players: { id: number; name: string; initials?: string }[];
   teams: { id: number; playerIds: number[] }[];
   stakes: { front: number; back: number; total: number };
   autoPress: boolean;
@@ -33,8 +33,10 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
   if (isMatchPlay) {
     const t1 = round.teams[0].playerIds;
     const t2 = round.teams[1].playerIds;
-    const getName = (ids: number[]) =>
-      ids.map((id) => round.players.find((p) => p.id === id)?.initials ?? '?').join('/');
+    const getFirstName = (id: number) =>
+      round.players.find((p) => p.id === id)?.name?.split(' ')[0] ?? '?';
+    const getTeamNames = (ids: number[]) =>
+      ids.map((id) => getFirstName(id)).join('/');
 
     const frontStart = Math.max(firstHole, 1);
     const frontEnd = Math.min(9, lastHole);
@@ -59,7 +61,7 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
         pAmt += Math.sign(pr.result) * p.stake;
       });
       const net = fAmt + bAmt + tAmt + pAmt;
-      dollarBar = { net, leader: net > 0 ? getName(t1) : net < 0 ? getName(t2) : null };
+      dollarBar = { net, leader: net > 0 ? getTeamNames(t1) : net < 0 ? getTeamNames(t2) : null };
     }
 
     function Badge({
@@ -89,9 +91,9 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
             {result === 0 ? 'AS' : result > 0 ? `${result}↑` : `${Math.abs(result)}↓`}
           </Text>
           {dormie && <Text style={styles.dormie}>DORMIE</Text>}
-          {!dormie && (
+            {!dormie && (
             <Text style={styles.badgeSub}>
-              {result === 0 ? 'tied' : result > 0 ? getName(t1) : getName(t2)}
+              {result === 0 ? 'tied' : result > 0 ? getTeamNames(t1) : getTeamNames(t2)}
             </Text>
           )}
         </View>
@@ -106,9 +108,7 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
             <Text
               style={[
                 styles.matchDollar,
-                dollarBar.net === 0 && styles.dollarEven,
-                dollarBar.net > 0 && styles.dollarUp,
-                dollarBar.net < 0 && styles.dollarDown,
+                dollarBar.net === 0 ? styles.dollarEven : styles.dollarUp,
               ]}
             >
               {dollarBar.net === 0 ? 'EVEN' : `${dollarBar.leader} +$${Math.abs(dollarBar.net)}`}
@@ -135,8 +135,8 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
               return (
                 <View key={i} style={styles.pressRow}>
                   <Text style={styles.pressLabel}>🔁 Press H{p.startHole}–{p.endHole} (${p.stake})</Text>
-                  <Text style={[styles.pressResult, pr.result === 0 && styles.dollarEven, pr.result > 0 && styles.dollarUp, pr.result < 0 && styles.dollarDown]}>
-                    {pr.result === 0 ? 'AS' : pr.result > 0 ? `${getName(t1)} +${pr.result}` : `${getName(t2)} +${Math.abs(pr.result)}`}
+                  <Text style={[styles.pressResult, pr.result === 0 ? styles.dollarEven : styles.dollarUp]}>
+                    {pr.result === 0 ? 'AS' : pr.result > 0 ? `${getTeamNames(t1)} +${pr.result}` : `${getTeamNames(t2)} +${Math.abs(pr.result)}`}
                   </Text>
                 </View>
               );
@@ -154,7 +154,8 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
     if (r.winner != null) skinsWon[r.winner] = (skinsWon[r.winner] ?? 0) + (r.skinsWon ?? 0);
   });
   const currentCarry = skinResults.find((r) => r.hole === currentHole)?.carryover ?? 0;
-  const hotPot = (currentCarry + 1) * round.skinValue * round.players.length;
+  const perSkin = round.skinValue * Math.max(0, round.players.length - 1);
+  const hotPot = (currentCarry + 1) * perSkin;
 
   return (
     <View style={styles.skinsRoot}>
@@ -167,13 +168,24 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
         )}
       </View>
       <View style={styles.skinsRow}>
-        {round.players.map((p) => (
+        {round.players.map((p) => {
+          const firstName = p.name?.split(' ')[0] ?? p.initials ?? '?';
+          const skinAmt = skinsWon[p.id] * perSkin;
+          const maxSkinAmt = Math.max(...round.players.map((q) => skinsWon[q.id] * perSkin));
+          const minSkinAmt = Math.min(...round.players.map((q) => skinsWon[q.id] * perSkin));
+          const isAhead = skinAmt === maxSkinAmt && maxSkinAmt > minSkinAmt;
+          const isBehind = skinAmt === minSkinAmt && maxSkinAmt > minSkinAmt;
+          return (
           <View key={p.id} style={styles.skinCell}>
-            <Text style={styles.skinInitials}>{p.initials}</Text>
+            <Text style={styles.skinInitials}>{firstName}</Text>
             <Text style={[styles.skinCount, skinsWon[p.id] > 0 && styles.skinCountGold]}>{skinsWon[p.id]}</Text>
-            <Text style={styles.skinDollar}>${skinsWon[p.id] * round.skinValue * round.players.length}</Text>
+            <Text style={[
+              styles.skinDollar,
+              isAhead && styles.skinDollarUp,
+              isBehind && styles.skinDollarDown,
+            ]}>${skinAmt}</Text>
           </View>
-        ))}
+        );})}
       </View>
       {currentCarry > 0 && (
         <Text style={styles.carryText}>
@@ -245,5 +257,7 @@ const styles = StyleSheet.create({
   skinCount: { fontSize: 20, fontWeight: '700', color: '#5a8a6a' },
   skinCountGold: { color: Colors.gold },
   skinDollar: { fontSize: 9, color: '#5a8a6a' },
+  skinDollarUp: { color: '#7dd4a0' },
+  skinDollarDown: { color: '#ff9090' },
   carryText: { marginTop: 6, color: '#5a8a6a', fontSize: 10, fontStyle: 'italic', textAlign: 'center' },
 });

@@ -16,7 +16,7 @@ export function venmoDeepLink(
   txn: 'pay' | 'request',
 ): string {
   const handle = stripHandle(recipientHandle);
-  const encoded = encodeURIComponent(note || 'Square18');
+  const encoded = encodeURIComponent(note || 'square18');
   return `venmo://paycharge?txn=${txn}&recipients=${handle}&amount=${amount}&note=${encoded}`;
 }
 
@@ -42,6 +42,7 @@ export interface SettlementRoundLike {
   stakes: { front: number; back: number; total: number };
   skinValue: number;
   sideBets: { id: string | number; type: string; hole: number | null; amount: number }[];
+  courseName?: string;
 }
 
 export interface SkinsSettlementSummary {
@@ -55,6 +56,12 @@ export interface Five31ResultLike {
   points: number;
 }
 
+export interface HighlightLike {
+  label: string;
+  detail: string;
+  emoji: string;
+}
+
 export interface SettlementTextOptions {
   netPerPlayer: Record<number, number>;
   matchContrib?: Record<number, number>;
@@ -62,6 +69,8 @@ export interface SettlementTextOptions {
   birdieCounts?: Record<number, number>;
   five31Results?: Five31ResultLike[];
   wolfNet?: Record<number, number>;
+  highlights?: (HighlightLike | null)[];
+  dateStr?: string;
 }
 
 /** One transfer: fromId owes toId amount (rounded whole dollars). */
@@ -72,27 +81,34 @@ export interface SettlementTransaction {
 }
 
 /**
- * Reduce net positions to minimum number of transactions (greedy: match largest creditor with largest debtor).
- * netPerPlayer: positive = collects, negative = owes.
+ * Reduce net positions to minimum number of transactions.
+ * Greedy: match biggest debtor with biggest creditor, settle as much as possible, repeat.
+ * netPerPlayer: positive = won/collects, negative = lost/owes.
+ * Returns transactions as "[fromId] owes [toId] $amount".
  */
 export function minTransactions(netPerPlayer: Record<number, number>): SettlementTransaction[] {
   const ids = Object.keys(netPerPlayer).map(Number);
-  const nets = ids.map((id) => Math.round(netPerPlayer[id] ?? 0));
+  const balances = new Map<number, number>();
+  ids.forEach((id) => balances.set(id, Math.round(netPerPlayer[id] ?? 0)));
+
   const out: SettlementTransaction[] = [];
-  const creditors = ids.map((id, i) => ({ id, net: nets[i]! })).filter((x) => x.net > 0);
-  const debtors = ids.map((id, i) => ({ id, net: -nets[i]! })).filter((x) => x.net > 0);
+  const getCreditors = () =>
+    [...balances.entries()].filter(([, b]) => b > 0).sort((a, b) => b[1]! - a[1]!);
+  const getDebtors = () =>
+    [...balances.entries()].filter(([, b]) => b < 0).sort((a, b) => a[1]! - b[1]!);
+
+  let creditors = getCreditors();
+  let debtors = getDebtors();
   while (creditors.length > 0 && debtors.length > 0) {
-    creditors.sort((a, b) => b.net - a.net);
-    debtors.sort((a, b) => b.net - a.net);
-    const c = creditors[0]!;
-    const d = debtors[0]!;
-    const amount = Math.min(c.net, d.net);
+    const [creditorId, creditAmt] = creditors[0]!;
+    const [debtorId, debtAmt] = debtors[0]!;
+    const amount = Math.min(creditAmt, -debtAmt);
     if (amount <= 0) break;
-    out.push({ fromId: d.id, toId: c.id, amount });
-    c.net -= amount;
-    d.net -= amount;
-    if (c.net <= 0) creditors.shift();
-    if (d.net <= 0) debtors.shift();
+    out.push({ fromId: debtorId, toId: creditorId, amount });
+    balances.set(creditorId, creditAmt - amount);
+    balances.set(debtorId, debtAmt + amount);
+    creditors = getCreditors();
+    debtors = getDebtors();
   }
   return out;
 }
@@ -122,11 +138,14 @@ export function buildSettlementText(
   const birdieCounts = options.birdieCounts ?? {};
   const five31Results = options.five31Results ?? [];
   const wolfNet = options.wolfNet ?? {};
+  const dateStr = options.dateStr ?? new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   const gameLabel =
     round.gameStyle === 'matchplay' ? 'Match Play' : round.gameStyle === 'fivethreeone' ? '5-3-1' : round.gameStyle === 'wolf' ? 'Wolf' : 'Skins';
   const courseName = round.courseName || 'Course';
   const lines: string[] = [
-    `⛳ Square18 — ${courseName}`,
+    `🏌️ square18 results`,
+    `${courseName} • ${dateStr}`,
+    '',
     `${round.tee} tees · ${gameLabel}${round.players.length === 2 && round.gameStyle === 'matchplay' ? ' · 1v1' : ''}`,
     '',
   ];
@@ -225,8 +244,18 @@ export function buildSettlementText(
     });
   }
 
-  lines.push('─────────────────────────');
-  lines.push('SETTLE UP (match + side bets = one number per player)');
+  lines.push('');
+  lines.push('MATCH RESULTS');
+  round.players
+    .slice()
+    .sort((a, b) => (netPerPlayer[b.id] ?? 0) - (netPerPlayer[a.id] ?? 0))
+    .forEach((p) => {
+      const net = Math.round(netPerPlayer[p.id] ?? 0);
+      const name = p.id === scorekeeperId ? 'You' : p.name;
+      lines.push(`${name}      ${net >= 0 ? '+' : ''}$${net}`);
+    });
+  lines.push('');
+  lines.push('SETTLE UP');
   lines.push('');
   round.players.forEach((p) => {
     const net = Math.round(netPerPlayer[p.id] ?? 0);
@@ -246,18 +275,22 @@ export function buildSettlementText(
       const toName = round.players.find((x) => x.id === tx.toId);
       const fromLabel = fromName && fromName.id === scorekeeperId ? 'You' : fromName?.name ?? '';
       const toLabel = toName && toName.id === scorekeeperId ? 'You' : toName?.name ?? '';
-      const venmoHandle = toName?.venmo ? (toName.venmo.startsWith('@') ? toName.venmo : `@${toName.venmo}`) : '';
-      const actionLine = venmoHandle
-        ? `${fromLabel} pay ${toLabel} $${tx.amount} (Venmo: ${venmoHandle})`
-        : `${fromLabel} pay ${toLabel} $${tx.amount}`;
-      lines.push(actionLine);
-      if (toName?.venmo) lines.push(`→ ${venmoWebLink(toName.venmo)}`);
-      lines.push('');
+      lines.push(`${fromLabel} pays ${toLabel} $${tx.amount}`);
     });
   }
 
-  lines.push('─────────────────────────');
-  lines.push('Powered by Square18');
+  const highlights = options.highlights ?? [];
+  const displayHighlights = highlights.filter((h): h is HighlightLike => h != null);
+  if (displayHighlights.length > 0) {
+    lines.push('');
+    lines.push('HIGHLIGHTS');
+    displayHighlights.forEach((h) => {
+      lines.push(`${h.emoji} ${h.detail}`);
+    });
+  }
+
+  lines.push('');
+  lines.push('Set it. Play it. Square it. — via square18');
   return lines.join('\n');
 }
 

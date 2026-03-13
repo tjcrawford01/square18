@@ -5,7 +5,7 @@ import { GameRulesModal } from './GameRulesModal';
 import { HistoryModal } from './HistoryModal';
 
 const FEEDBACK_EMAIL = 'feedback@square18.app';
-const FEEDBACK_SUBJECT = 'Square18 Feedback';
+const FEEDBACK_SUBJECT = 'square18 Feedback';
 
 interface HamburgerMenuProps {
   showViewScorecard?: boolean;

@@ -25,6 +25,7 @@ export default function PlayersScreen() {
   const { players, setPlayers } = useRoundStore();
   const safePlayers = Array.isArray(players) ? players : [];
   const [editing, setEditing] = useState<number | null>(null);
+  const [editingName, setEditingName] = useState<string>('');
   const [editingHcp, setEditingHcp] = useState<{ playerId: number; value: string } | null>(null);
 
   const updatePlayer = (id: number, field: keyof Player, value: string | number) => {
@@ -48,12 +49,13 @@ export default function PlayersScreen() {
     setPlayers((ps) => (Array.isArray(ps) ? ps : []).filter((p) => p.id !== id));
   };
 
-  const handleNameBlur = (p: Player, text: string) => {
-    const name = (text || p.name).trim();
+  const handleNameBlur = (p: Player) => {
+    const name = (editingName || p.name).trim();
     const initials = initialsFromName(name);
     updatePlayer(p.id, 'name', name);
     updatePlayer(p.id, 'initials', initials);
     setEditing(null);
+    setEditingName('');
   };
 
   return (
@@ -76,13 +78,14 @@ export default function PlayersScreen() {
                 {editing === p.id ? (
                   <TextInput
                     autoFocus
-                    defaultValue={p.name}
-                    onBlur={(e) => handleNameBlur(p, e.nativeEvent.text)}
+                    value={editingName || p.name}
+                    onChangeText={setEditingName}
+                    onBlur={() => handleNameBlur(p)}
                     style={styles.nameInput}
                     placeholder="Name"
                   />
                 ) : (
-                  <Pressable onPress={() => setEditing(p.id)}>
+                  <Pressable onPress={() => { setEditing(p.id); setEditingName(p.name); }}>
                     <Text style={styles.name}>{p.name}</Text>
                   </Pressable>
                 )}
@@ -140,15 +143,6 @@ export default function PlayersScreen() {
             <Text style={styles.addBtnText}>+ Add Player ({safePlayers.length}/4)</Text>
           </Pressable>
         )}
-        <View style={styles.note}>
-          <Text style={styles.noteText}>
-            {safePlayers.length === 2
-              ? '1v1 Nassau — each player is their own team.'
-              : safePlayers.length === 3
-                ? '3 players — skins only (no match play).'
-                : '4 players — 2v2 teams assigned on next screen.'}
-          </Text>
-        </View>
       </ScrollView>
       <View style={styles.footer}>
         <PrimaryBtn label="Choose Game →" onPress={() => router.push('/setup/game')} />
@@ -263,18 +257,6 @@ const styles = StyleSheet.create({
   addBtnText: {
     color: Colors.gray,
     fontSize: 13,
-  },
-  note: {
-    backgroundColor: Colors.parchment,
-    borderRadius: 8,
-    padding: 10,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: Colors.sand,
-  },
-  noteText: {
-    fontSize: 12,
-    color: Colors.gray,
   },
   footer: {
     padding: 16,

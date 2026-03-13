@@ -11,6 +11,7 @@ import type { Course, Hole, Tee } from '../types/course';
 const CACHE_PREFIX = 'course:';
 const LAST_COURSE_KEY = 'lastCourseId';
 const BASE = 'https://www.golfapi.io/api/v2.3';
+export const ASPETUCK_API_ID = '012141520679645759931';
 
 function getApiKey(): string {
   const key = (Constants.expoConfig?.extra as { GOLFAPI_KEY?: string } | undefined)?.GOLFAPI_KEY ?? '';
@@ -95,22 +96,27 @@ function mapClubsToList(data: { clubs?: ApiClub[] }): CourseListItem[] {
 
 /**
  * Get full course detail. Uses cache: returns cached if present.
+ * Pass forceRefresh: true to bypass cache (e.g. for Aspetuck to get updated ratings).
  */
-export async function getCourseDetail(courseId: string): Promise<Course | null> {
-  const cacheKey = CACHE_PREFIX + courseId;
-  const cached = await AsyncStorage.getItem(cacheKey);
-  if (cached) {
-    try {
-      return JSON.parse(cached) as Course;
-    } catch {
-      // fall through to fetch
+export async function getCourseDetail(courseId: string, forceRefresh = false): Promise<Course | null> {
+  const effectiveId = courseId === 'aspetuck' ? ASPETUCK_API_ID : courseId;
+  const cacheKey = CACHE_PREFIX + effectiveId;
+
+  if (!forceRefresh) {
+    const cached = await AsyncStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        return JSON.parse(cached) as Course;
+      } catch {
+        // fall through to fetch
+      }
     }
   }
 
   const key = getApiKey();
   if (!key) return null;
   try {
-    const url = `${BASE}/courses/${courseId}`;
+    const url = `${BASE}/courses/${effectiveId}`;
     const res = await fetch(url, { headers: getHeaders() });
     if (!res.ok) return null;
     const data = await res.json();

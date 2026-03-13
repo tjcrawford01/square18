@@ -9,6 +9,9 @@ import {
   ScrollView,
   Modal,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -22,6 +25,7 @@ import {
   getLastCourseId,
   setLastCourseId,
   type CourseListItem,
+  ASPETUCK_API_ID,
 } from '../src/services/golfApi';
 import type { Course } from '../src/types/course';
 import { hasMissingStrokeIndex, applyStrokeIndexFallback } from '../src/types/course';
@@ -60,8 +64,9 @@ export default function SplashScreen() {
         setLoadingLastCourse(false);
         return;
       }
+      const isAspetuck = lastId === 'aspetuck' || lastId === ASPETUCK_API_ID;
       if (lastId) {
-        const course = await getCourseDetail(lastId);
+        const course = await getCourseDetail(lastId, isAspetuck);
         if (!cancelled && course) {
           setSelectedCourse(course);
           setLoadingLastCourse(false);
@@ -69,7 +74,13 @@ export default function SplashScreen() {
         }
       }
       if (!cancelled) {
-        setSelectedCourse(ASPETUCK_COURSE);
+        const course = await getCourseDetail(ASPETUCK_API_ID, true);
+        if (!cancelled && course) {
+          setSelectedCourse(course);
+          await setLastCourseId(course.id);
+        } else if (!cancelled) {
+          setSelectedCourse(ASPETUCK_COURSE);
+        }
       }
       setLoadingLastCourse(false);
     })();
@@ -183,8 +194,8 @@ export default function SplashScreen() {
           <Text style={styles.emoji}>⛳</Text>
           <Text style={styles.disclaimerTitle}>Before You Play</Text>
           <Text style={styles.disclaimerBody}>
-            Square18 is a score tracking and settlement calculation tool. All payments are made
-            directly between players via third-party services. Square18 does not process, hold, or
+            square18 is a score tracking and settlement calculation tool. All payments are made
+            directly between players via third-party services. square18 does not process, hold, or
             transfer funds.
           </Text>
           <Text style={styles.disclaimerBody}>
@@ -203,13 +214,16 @@ export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.emoji}>⛳</Text>
-        <Text style={styles.title}>Square18</Text>
+        <Image source={require('../assets/square18logo.png')} style={styles.logo} resizeMode="contain" />
         <Text style={styles.tagline}>Set it · Play it · Square it</Text>
       </View>
 
       {showCourseSearch ? (
-        <View style={styles.middleSection}>
+        <KeyboardAvoidingView
+          style={styles.middleSection}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
           <View style={styles.card}>
             <View style={styles.chipRow}>
               <Text style={styles.cardTitle}>Select Course</Text>
@@ -232,7 +246,12 @@ export default function SplashScreen() {
                 ) : displayList.length === 0 && searchQuery.length >= SEARCH_MIN_LEN ? (
                   <Text style={styles.noResults}>No courses found — try a different spelling</Text>
                 ) : (
-                  <ScrollView style={styles.listScroll} nestedScrollEnabled>
+                  <ScrollView
+                    style={styles.listScroll}
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
+                  >
                     {displayList.map((item) => (
                       <Pressable
                         key={item.id}
@@ -257,7 +276,7 @@ export default function SplashScreen() {
               </View>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       ) : (
         <View style={styles.middleSection}>
           <View style={styles.courseCard}>
@@ -351,9 +370,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  emoji: { fontSize: 52, marginBottom: 20 },
-  title: { fontSize: 48, fontWeight: '700', color: Colors.cream },
-  tagline: { color: Colors.gold, fontSize: 20, marginTop: 12, letterSpacing: 4 },
+  logo: { width: 220, height: 88, marginBottom: 20 },
+  tagline: { color: Colors.gold, fontSize: 20, letterSpacing: 4 },
   card: {
     backgroundColor: Colors.cream,
     borderRadius: 12,

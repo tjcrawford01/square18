@@ -91,8 +91,10 @@ export function computeFiveThreeOne(
 }
 
 /**
- * Settlement: per-point mode uses (playerPoints - avgPoints) * dollarsPerPoint;
- * fixed-pot mode uses (playerPoints / totalPoints) * totalPot - totalPot/3 per player.
+ * Settlement: pairwise differentials.
+ * For every pair of players, the one with fewer points pays the one with more points the difference × stake.
+ * perPoint mode: stake = value per point.
+ * fixedPot mode: stake = totalPot / totalPoints (converted to per-point equivalent).
  */
 export function fiveThreeOneSettlement(
   results: { playerId: number; points: number }[],
@@ -101,17 +103,31 @@ export function fiveThreeOneSettlement(
 ): { playerId: number; net: number }[] {
   if (results.length !== 3) return results.map((r) => ({ playerId: r.playerId, net: 0 }));
   const totalPoints = results.reduce((s, r) => s + r.points, 0);
-  const avgPoints = totalPoints / 3;
+  const stake = mode === 'perPoint' ? value : totalPoints > 0 ? value / totalPoints : 0;
 
-  if (mode === 'perPoint') {
-    return results.map((r) => ({
-      playerId: r.playerId,
-      net: Math.round((r.points - avgPoints) * value),
-    }));
+  const netPerPlayer: Record<number, number> = {};
+  results.forEach((r) => (netPerPlayer[r.playerId] = 0));
+
+  for (let i = 0; i < results.length; i++) {
+    for (let j = i + 1; j < results.length; j++) {
+      const a = results[i]!;
+      const b = results[j]!;
+      const diff = Math.abs(a.points - b.points);
+      const amt = Math.round(diff * stake);
+      if (diff > 0 && amt > 0) {
+        if (a.points > b.points) {
+          netPerPlayer[a.playerId] = (netPerPlayer[a.playerId] ?? 0) + amt;
+          netPerPlayer[b.playerId] = (netPerPlayer[b.playerId] ?? 0) - amt;
+        } else {
+          netPerPlayer[b.playerId] = (netPerPlayer[b.playerId] ?? 0) + amt;
+          netPerPlayer[a.playerId] = (netPerPlayer[a.playerId] ?? 0) - amt;
+        }
+      }
+    }
   }
-  const totalPot = value;
+
   return results.map((r) => ({
     playerId: r.playerId,
-    net: Math.round((totalPoints > 0 ? (r.points / totalPoints) * totalPot : totalPot / 3) - totalPot / 3),
+    net: netPerPlayer[r.playerId] ?? 0,
   }));
 }

@@ -1,8 +1,6 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Alert, Share } from 'react-native';
 import { useRouter } from 'expo-router';
-import ViewShot from 'react-native-view-shot';
-import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRoundStore } from '../src/store/roundStore';
 import { useCourseStore } from '../src/store/courseStore';
@@ -19,18 +17,10 @@ import { getBiggestMoment, getBiggestChoke, getMomentumSwing } from '../src/engi
 import { buildSettlementText, buildScorecardShareText, minTransactions, venmoDeepLink, venmoLink, iMessageLink } from '../src/engine/settlement';
 import { Card } from '../src/components/Card';
 import { SectionLabel } from '../src/components/SectionLabel';
-import { ShareableResultsCard } from '../src/components/ShareableResultsCard';
 import { Colors } from '../src/theme/colors';
-
-function formatShareDate(d: Date): string {
-  const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-  const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-  return `${days[d.getDay()]} ${months[d.getMonth()]} ${d.getDate()}`;
-}
 
 export default function SettlementScreen() {
   const router = useRouter();
-  const viewShotRef = useRef<ViewShot>(null);
   const { round, sideBetWinners, setSideBetWinner, resetRound } = useRoundStore();
   const selectedCourse = useCourseStore((s) => s.selectedCourse);
 
@@ -70,7 +60,7 @@ export default function SettlementScreen() {
   skinResults.forEach((r) => {
     if (r.winner != null) skinsWon[r.winner] = (skinsWon[r.winner] ?? 0) + (r.skinsWon ?? 0);
   });
-  const perSkin = round.skinValue * round.players.length;
+  const perSkin = round.skinValue * Math.max(0, round.players.length - 1);
   const skinsSettlement = !isMatchPlay && !is531 && !isWolf ? { skinResults, skinsWon, perSkin } : null;
 
   const five31Results = is531 && round.players.length === 3
@@ -159,6 +149,8 @@ export default function SettlementScreen() {
       birdieCounts: birdieCounts ?? undefined,
       five31Results: is531 ? five31Results : undefined,
       wolfNet: isWolf ? wolfNet ?? undefined : undefined,
+      highlights,
+      dateStr: new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
     }
   );
 
@@ -230,39 +222,12 @@ export default function SettlementScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- save once on mount
   }, []);
 
-  const handleShareImage = async () => {
-    try {
-      if (!viewShotRef.current) return;
-      const uri = await viewShotRef.current.capture?.();
-      if (!uri) return;
-      const isAvailable = await Sharing.isAvailableAsync();
-      if (!isAvailable) {
-        Alert.alert('Sharing unavailable', 'Sharing is not available on this device.');
-        return;
-      }
-      await Sharing.shareAsync(uri, {
-        mimeType: 'image/png',
-        dialogTitle: 'Share Match Results',
-      });
-    } catch (err) {
-      Alert.alert('Share failed', (err as Error).message ?? 'Could not share image.');
-    }
+  const handleShareResults = () => {
+    Share.share({ message: msgText, title: 'square18 Results' });
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.offScreen}>
-        <ViewShot ref={viewShotRef} options={{ format: 'png', width: 1080, height: 1080, result: 'tmpfile' }}>
-          <ShareableResultsCard
-            date={formatShareDate(new Date())}
-            courseName={selectedCourse?.name ?? 'Course'}
-            players={round.players}
-            netPerPlayer={netPerPlayer}
-            gameStyle={round.gameStyle}
-            highlights={highlights}
-          />
-        </ViewShot>
-      </View>
       <View style={styles.hero}>
         <Text style={styles.heroEmoji}>⛳</Text>
         <Text style={styles.heroTitle}>You're Square.</Text>
@@ -275,11 +240,6 @@ export default function SettlementScreen() {
         <Pressable style={styles.shareScorecardBtn} onPress={shareScorecard}>
           <Text style={styles.shareScorecardBtnText}>Share Scorecard</Text>
         </Pressable>
-        <View style={styles.scorekeeperNote}>
-          <Text style={styles.scorekeeperNoteText}>
-            You're the scorekeeper. Use the breakdown below and Venmo buttons to request payment from others, or send the group text so everyone sees the totals.
-          </Text>
-        </View>
         {isWolf && wolfNet && (
           <>
             <SectionLabel>Wolf Results</SectionLabel>
@@ -409,126 +369,63 @@ export default function SettlementScreen() {
           </>
         )}
 
-        {round.sideBets.length > 0 && (
+        {highlights.filter((h): h is NonNullable<typeof h> => h != null).length > 0 && (
           <>
-            <SectionLabel>Side Bets</SectionLabel>
-            {round.sideBets.map((sb) => {
-              const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
-              const pot = sb.amount * round.players.length;
-              const winnerId = sideBetWinners[sb.id];
-              const winner = winnerId ? round.players.find((p) => p.id === winnerId) : null;
-              let birdieWinner: (typeof round.players)[0] | null = null;
-              let birdieLeaders: (typeof round.players) = [];
-              let maxBirdies = 0;
-              if (sb.type === 'birdie' && birdieCounts) {
-                maxBirdies = Math.max(...round.players.map((p) => birdieCounts[p.id]));
-                birdieLeaders = round.players.filter((p) => birdieCounts[p.id] === maxBirdies && maxBirdies > 0);
-                if (birdieLeaders.length === 1) birdieWinner = birdieLeaders[0];
-              }
-              const effectiveWinner = sb.type === 'birdie' ? birdieWinner : winner;
-
-              return (
-                <Card key={sb.id} accent={effectiveWinner ? Colors.forest : Colors.sand} style={styles.sideBetCard}>
-                  <Text style={styles.sideBetTitle}>{type?.label}{!type?.noHole ? ` · Hole ${sb.hole}` : ''}</Text>
-                  <Text style={styles.sideBetPot}>${pot} pot</Text>
-                  {sb.type === 'birdie' && birdieCounts ? (
-                    <View style={styles.birdieSection}>
-                      {round.players
-                        .slice()
-                        .sort((a, b) => birdieCounts[b.id] - birdieCounts[a.id])
-                        .map((p) => (
-                          <View key={p.id} style={styles.birdieRow}>
-                            <Text style={styles.birdieName}>{p.name}</Text>
-                            <Text style={[styles.birdieCount, birdieCounts[p.id] > 0 && styles.skinAmtGreen]}>
-                              {birdieCounts[p.id]} birdie{birdieCounts[p.id] !== 1 ? 's' : ''}
-                            </Text>
-                          </View>
-                        ))}
-                      {birdieWinner ? (
-                        <View style={styles.birdieWinnerSection}>
-                          <Text style={styles.birdieWinnerText}>🏆 {birdieWinner.name} wins ${pot}</Text>
-                          {round.players
-                            .filter((p) => p.id !== birdieWinner!.id)
-                            .map((payer) => (
-                              <Pressable
-                                key={payer.id}
-                                style={styles.venmoBtnFull}
-                                onPress={() => openVenmo(venmoLink(birdieWinner!.venmo, sb.amount, `Square18 Birdie Pool @${selectedCourse?.name ?? 'Course'}`))}
-                              >
-                                <Text style={styles.venmoBtnText}>{payer.name} → Pay {birdieWinner!.name} ${sb.amount}</Text>
-                              </Pressable>
-                            ))}
-                        </View>
-                      ) : birdieLeaders.length > 1 && maxBirdies > 0 ? (
-                        <View style={styles.birdieWinnerSection}>
-                          <Text style={styles.birdieWinnerText}>Pot split — ${Math.round(pot / birdieLeaders.length)} each</Text>
-                          {round.players
-                            .filter((p) => !birdieLeaders.includes(p))
-                            .map((payer) =>
-                              birdieLeaders.map((winner) => (
-                                <Pressable
-                                  key={`${payer.id}-${winner.id}`}
-                                  style={styles.venmoBtnFull}
-                                  onPress={() => openVenmo(venmoLink(winner.venmo, sb.amount, `Square18 Birdie Pool @${selectedCourse?.name ?? 'Course'}`))}
-                                >
-                                  <Text style={styles.venmoBtnText}>{payer.name} → Pay {winner.name} ${sb.amount}</Text>
-                                </Pressable>
-                              ))
-                            )}
-                        </View>
-                      ) : (
-                        <Text style={styles.tieText}>No birdies — pot carries or agree with group</Text>
-                      )}
-                    </View>
-                  ) : (
-                    <View>
-                      {!effectiveWinner ? (
-                        <>
-                          <Text style={styles.whoWon}>Who won?</Text>
-                          <View style={styles.winnerChips}>
-                            {round.players.map((p) => (
-                              <Pressable key={p.id} style={styles.winnerChip} onPress={() => setSideBetWinner(sb.id, p.id)}>
-                                <Text style={styles.winnerChipText}>{p.name}</Text>
-                              </Pressable>
-                            ))}
-                          </View>
-                        </>
-                      ) : (
-                        <>
-                          <Text style={styles.birdieWinnerText}>🏆 {effectiveWinner.name} wins ${pot}</Text>
-                          {round.players
-                            .filter((p) => p.id !== effectiveWinner.id)
-                            .map((payer) => (
-                              <Pressable
-                                key={payer.id}
-                                style={styles.venmoBtnFull}
-                                onPress={() => openVenmo(venmoLink(effectiveWinner.venmo, sb.amount, `Square18 ${type?.label} @${selectedCourse?.name ?? 'Course'}`))}
-                              >
-                                <Text style={styles.venmoBtnText}>{payer.name} → Pay {effectiveWinner.name} ${sb.amount}</Text>
-                              </Pressable>
-                            ))}
-                          <Pressable onPress={() => setSideBetWinner(sb.id, undefined)}>
-                            <Text style={styles.changeWinner}>← Change winner</Text>
-                          </Pressable>
-                        </>
-                      )}
-                    </View>
-                  )}
-                </Card>
-              );
-            })}
+            <SectionLabel>Highlights</SectionLabel>
+            <Card style={styles.card}>
+              {highlights.filter((h): h is NonNullable<typeof h> => h != null).map((h, i) => (
+                <View key={i} style={styles.highlightRow}>
+                  <Text style={styles.highlightEmoji}>{h.emoji}</Text>
+                  <View style={styles.highlightText}>
+                    <Text style={styles.highlightLabel}>{h.label.replace(h.emoji, '').trim()}</Text>
+                    <Text style={styles.highlightDetail}>{h.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </Card>
           </>
         )}
 
+        {round.sideBets.some((sb) => sb.type !== 'birdie' && !sideBetWinners[sb.id]) && (
+          <Card style={styles.sideBetCard}>
+            <Text style={styles.sideBetTitle}>Pick winners for side bets</Text>
+            {round.sideBets
+              .filter((sb) => sb.type !== 'birdie' && !sideBetWinners[sb.id])
+              .map((sb) => {
+                const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
+                return (
+                  <View key={sb.id} style={styles.winnerPickRow}>
+                    <Text style={styles.whoWon}>{type?.label}{sb.hole != null ? ` (Hole ${sb.hole})` : ''}</Text>
+                    <View style={styles.winnerChips}>
+                      {round.players.map((p) => (
+                        <Pressable key={p.id} style={styles.winnerChip} onPress={() => setSideBetWinner(sb.id, p.id)}>
+                          <Text style={styles.winnerChipText}>{p.name}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })}
+          </Card>
+        )}
+
         <SectionLabel>Settle Up</SectionLabel>
-        <View style={styles.settleUpNote}>
-          <Text style={styles.settleUpNoteText}>
-            Amounts below are each player's final net (match/game + all side bets combined).
-          </Text>
-        </View>
+        <Card style={styles.settleCard}>
+          {round.players
+            .slice()
+            .sort((a, b) => (netPerPlayer[b.id] ?? 0) - (netPerPlayer[a.id] ?? 0))
+            .map((p) => (
+              <View key={p.id} style={styles.settleNetRow}>
+                <Text style={styles.settleNetName}>{p.id === scorekeeperId ? 'You' : p.name}</Text>
+                <Text style={[styles.settleNetAmt, (netPerPlayer[p.id] ?? 0) > 0 && styles.skinAmtGreen, (netPerPlayer[p.id] ?? 0) < 0 && styles.resultLose]}>
+                  {(netPerPlayer[p.id] ?? 0) >= 0 ? '+' : ''}{netPerPlayer[p.id] ?? 0}
+                </Text>
+              </View>
+            ))}
+        </Card>
         {(() => {
           const transactions = minTransactions(netPerPlayer);
-          const note = `Square18 @${selectedCourse?.name ?? 'Course'}`;
+          const note = `square18 @${selectedCourse?.name ?? 'Course'}`;
           const scorekeeperTx = transactions.filter(
             (t) => t.fromId === scorekeeperId || t.toId === scorekeeperId
           );
@@ -543,48 +440,52 @@ export default function SettlementScreen() {
             );
           }
           const getPlayer = (id: number) => round.players.find((p) => p.id === id);
+          const showVenmoButtons = round.players.length === 2;
           return (
             <>
-              {scorekeeperTx.map((t, i) => {
-                const otherId = t.fromId === scorekeeperId ? t.toId : t.fromId;
-                const owesYou = t.toId === scorekeeperId;
-                const other = getPlayer(otherId);
-                if (!other) return null;
-                return (
-                  <Card
-                    key={`sk-${i}`}
-                    accent={owesYou ? Colors.redLight : Colors.forest}
-                    style={styles.settleCard}
-                  >
-                    <View style={styles.settleHeader}>
-                      <Text style={styles.payerName}>
-                        {owesYou ? `${other.name} owes You $${t.amount}` : `You owe ${other.name} $${t.amount}`}
-                      </Text>
-                    </View>
-                    <Pressable
-                      style={styles.venmoBtn}
-                      onPress={() =>
-                        openVenmo(
-                          venmoDeepLink(other.venmo, t.amount, note, owesYou ? 'request' : 'pay')
-                        )
-                      }
+              {showVenmoButtons ? (
+                scorekeeperTx.map((t, i) => {
+                  const otherId = t.fromId === scorekeeperId ? t.toId : t.fromId;
+                  const owesYou = t.toId === scorekeeperId;
+                  const other = getPlayer(otherId);
+                  if (!other) return null;
+                  return (
+                    <Card
+                      key={`sk-${i}`}
+                      accent={owesYou ? Colors.redLight : Colors.forest}
+                      style={styles.settleCard}
                     >
-                      <Text style={styles.venmoBtnText}>
-                        {owesYou ? `Request $${t.amount} from ${other.name}` : `Pay ${other.name} $${t.amount}`}
-                      </Text>
-                    </Pressable>
-                  </Card>
-                );
-              })}
-              {otherTx.length > 0 && (
+                      <View style={styles.settleHeader}>
+                        <Text style={styles.payerName}>
+                          {owesYou ? `${other.name} owes You $${t.amount}` : `You owe ${other.name} $${t.amount}`}
+                        </Text>
+                      </View>
+                      <Pressable
+                        style={styles.venmoBtn}
+                        onPress={() =>
+                          openVenmo(
+                            venmoDeepLink(other.venmo, t.amount, note, owesYou ? 'request' : 'pay')
+                          )
+                        }
+                      >
+                        <Text style={styles.venmoBtnText}>
+                          {owesYou ? `Request $${t.amount} from ${other.name}` : `Pay ${other.name} $${t.amount}`}
+                        </Text>
+                      </Pressable>
+                    </Card>
+                  );
+                })
+              ) : (
                 <Card style={styles.settleCard}>
-                  {otherTx.map((t, i) => {
+                  {transactions.map((t, i) => {
                     const from = getPlayer(t.fromId);
                     const to = getPlayer(t.toId);
                     if (!from || !to) return null;
+                    const fromLabel = from.id === scorekeeperId ? 'You' : from.name;
+                    const toLabel = to.id === scorekeeperId ? 'You' : to.name;
                     return (
                       <Text key={i} style={styles.otherDebtText}>
-                        {from.name} owes {to.name} ${t.amount}
+                        {fromLabel} owes {toLabel} ${t.amount}
                       </Text>
                     );
                   })}
@@ -598,7 +499,7 @@ export default function SettlementScreen() {
           <Pressable style={styles.sendBtn} onPress={openiMessage}>
             <Text style={styles.sendBtnText}>📱 Send Group Settlement Text</Text>
           </Pressable>
-          <Pressable style={styles.shareResultsBtn} onPress={handleShareImage}>
+          <Pressable style={styles.shareResultsBtn} onPress={handleShareResults}>
             <Text style={styles.shareResultsBtnText}>Share Results 📸</Text>
           </Pressable>
           <View style={styles.preview}>
@@ -676,7 +577,11 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   settleCard: { marginBottom: 12 },
+  settleNetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  settleNetName: { fontSize: 15, fontWeight: '600' },
+  settleNetAmt: { fontSize: 16, fontWeight: '700', color: Colors.gray },
   settleHeader: { marginBottom: 10 },
+  winnerPickRow: { marginBottom: 12 },
   payerName: { fontWeight: '700', fontSize: 15 },
   owes: { color: Colors.red, fontSize: 18, fontWeight: '700' },
   owesSub: { color: Colors.gray, fontSize: 11, marginTop: 2 },
@@ -736,11 +641,11 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.gold,
   },
   shareResultsBtnText: { fontSize: 16, fontWeight: '700', color: Colors.cream },
-  offScreen: {
-    position: 'absolute',
-    left: -9999,
-    top: 0,
-  },
+  highlightRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  highlightEmoji: { fontSize: 24, marginRight: 10 },
+  highlightText: { flex: 1 },
+  highlightLabel: { fontSize: 14, fontWeight: '700', color: Colors.ink },
+  highlightDetail: { fontSize: 13, color: Colors.gray, marginTop: 2 },
   preview: { marginTop: 8, backgroundColor: Colors.parchment, borderRadius: 8, padding: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: Colors.sand },
   previewLabel: { fontSize: 10, color: Colors.gray, marginBottom: 6, letterSpacing: 1 },
   previewText: { fontSize: 11, color: Colors.ink, lineHeight: 18 },

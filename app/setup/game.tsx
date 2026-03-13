@@ -292,7 +292,7 @@ export default function GameScreen() {
             </View>
             <View style={styles.note}>
               <Text style={styles.noteText}>
-                {players.length} players × ${round.skinValue || 0} = <Text style={styles.noteBold}>${(round.skinValue || 0) * players.length} pot per skin</Text>. Ties carry.
+                {players.length} players × ${round.skinValue || 0} = <Text style={styles.noteBold}>${(round.skinValue || 0) * Math.max(0, players.length - 1)} to winner per skin</Text>. Ties carry.
               </Text>
             </View>
           </>

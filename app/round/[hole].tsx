@@ -195,7 +195,7 @@ export default function HoleScreen() {
         <View style={styles.carryBanner}>
           <Text>🔥</Text>
           <Text style={styles.carryBannerText}>
-            {carryHere} skin{carryHere > 1 ? 's' : ''} carrying in — ${(carryHere + 1) * round.skinValue * round.players.length} on the line
+            {carryHere} skin{carryHere > 1 ? 's' : ''} carrying in — ${(carryHere + 1) * round.skinValue * Math.max(0, round.players.length - 1)} on the line
           </Text>
         </View>
       )}
@@ -266,13 +266,12 @@ export default function HoleScreen() {
               const player = round.players.find((p) => p.id === r.playerId);
               if (!player) return null;
               const medals = ['🥇', '🥈', '🥉'];
-              const needHint = i === 2 && holeNum >= 9;
+              const firstName = player.name?.split(' ')[0] ?? player.name;
               return (
                 <View key={r.playerId} style={styles.five31Row}>
                   <Text style={styles.five31Medal}>{medals[i]}</Text>
-                  <Text style={styles.five31Name}>{player.name}</Text>
+                  <Text style={styles.five31Name}>{firstName}</Text>
                   <Text style={styles.five31Pts}>{r.points} pts</Text>
-                  {needHint && <Text style={styles.five31Hint}> (needs 5s)</Text>}
                 </View>
               );
             })}

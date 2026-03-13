@@ -30,27 +30,34 @@ export default function AddSideBetScreen() {
   const lastHole = numHoles === 'front9' ? 9 : 18;
   const holes = (tee?.holes ?? []).filter((h) => h.hole >= firstHole && h.hole <= lastHole);
   const eligibleForType = (typeId: string) => eligibleHoles(typeId, holes);
-  const firstCtp = useMemo(() => eligibleForType('ctp')[0] ?? 1, [holes]);
 
   const [type, setType] = useState<string>('ctp');
-  const [hole, setHole] = useState<number>(firstCtp);
+  const [selectedHoles, setSelectedHoles] = useState<number[]>([]);
   const [amount, setAmount] = useState<string>('5');
 
   const typeInfo = SIDE_BET_TYPES.find((t) => t.id === type);
   const needsHole = typeInfo && !typeInfo.noHole;
   const eligible = useMemo(() => eligibleForType(type), [type, holes]);
-  const currentHole = needsHole ? (eligible.includes(hole) ? hole : eligible[0] ?? 1) : 0;
+
+  const toggleHole = (h: number) => {
+    setSelectedHoles((prev) =>
+      prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h].sort((a, b) => a - b)
+    );
+  };
 
   const handleAdd = () => {
     const prevBets = Array.isArray(round?.sideBets) ? round.sideBets : [];
-    const id = Date.now();
-    const holeVal = type === 'birdie' || currentHole === 0 ? null : currentHole;
     const amountNum = Math.max(1, parseInt(amount, 10) || 5);
-    setRound({ sideBets: [...prevBets, { id, type, hole: holeVal, amount: amountNum }] });
+    const baseId = Date.now();
+    const newBets =
+      type === 'birdie' || !needsHole
+        ? [{ id: baseId, type, hole: null, amount: amountNum }]
+        : selectedHoles.map((h, i) => ({ id: baseId + i, type, hole: h, amount: amountNum }));
+    setRound({ sideBets: [...prevBets, ...newBets] });
     router.back();
   };
 
-  const canAdd = !needsHole || currentHole > 0;
+  const canAdd = !needsHole || selectedHoles.length > 0;
 
   return (
     <KeyboardAvoidingView
@@ -67,8 +74,7 @@ export default function AddSideBetScreen() {
               key={t.id}
               onPress={() => {
                 setType(t.id);
-                const el = eligibleForType(t.id);
-                setHole(t.noHole ? 0 : el[0] ?? 1);
+                setSelectedHoles([]);
               }}
               style={[styles.pickerOpt, type === t.id && styles.pickerOptActive]}
             >
@@ -80,16 +86,16 @@ export default function AddSideBetScreen() {
 
         {needsHole && (
           <>
-            <SectionLabel>Hole</SectionLabel>
+            <SectionLabel>Holes (tap to select multiple)</SectionLabel>
             <View style={styles.holesWrap}>
               {eligible.map((h) => {
-                const hd = holes[h - 1];
+                const hd = holes.find((x) => x.hole === h);
                 if (!hd) return null;
-                const isSelected = currentHole === h;
+                const isSelected = selectedHoles.includes(h);
                 return (
                   <Pressable
                     key={h}
-                    onPress={() => setHole(h)}
+                    onPress={() => toggleHole(h)}
                     style={[styles.holeChip, isSelected && styles.holeChipActive]}
                   >
                     <Text style={[styles.holeChipText, isSelected && styles.holeChipTextActive]}>
@@ -99,6 +105,11 @@ export default function AddSideBetScreen() {
                 );
               })}
             </View>
+            {selectedHoles.length > 0 && (
+              <Text style={styles.holeHint}>
+                {selectedHoles.length} hole{selectedHoles.length !== 1 ? 's' : ''} selected — {selectedHoles.length} separate bet{selectedHoles.length !== 1 ? 's' : ''}
+              </Text>
+            )}
           </>
         )}
 
@@ -147,6 +158,7 @@ const styles = StyleSheet.create({
   holeChipActive: { borderColor: Colors.forest, backgroundColor: Colors.forest },
   holeChipText: { fontSize: 12, color: Colors.ink },
   holeChipTextActive: { fontSize: 12, color: Colors.cream, fontWeight: '700' },
+  holeHint: { fontSize: 12, color: Colors.gray, marginBottom: 12 },
   amountInput: {
     borderWidth: 1,
     borderColor: Colors.grayLight,
