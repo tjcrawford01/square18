@@ -118,8 +118,11 @@ export function GameRulesModal({ visible, onClose }: GameRulesModalProps) {
               <Text style={accordionStyles.bodyText}>• Total winner is whoever wins more of the 18 holes overall</Text>
               <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Ties (halved holes) are not counted for either side</Text>
               <Text style={accordionStyles.bodySubhead}>Presses</Text>
-              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>
+              <Text style={accordionStyles.bodyText}>
                 A press is an optional side bet that starts a new match within the same nine. If your team is down by the press number (e.g. 2 holes), you can press to start a fresh competition for the remaining holes of that nine. Both teams must agree to press rules before the round.
+              </Text>
+              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>
+                A press starts each time the losing team falls behind by another multiple of the press amount. Once pressed at a given deficit, returning to that deficit after recovering does not trigger another press.
               </Text>
               <Text style={accordionStyles.bodySubhead}>Handicaps</Text>
               <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>

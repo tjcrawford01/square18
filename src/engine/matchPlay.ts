@@ -61,8 +61,12 @@ export function computePresses(
   holes: HoleInfo[],
 ): Press[] {
   const presses: Press[] = [];
-  let pressCursor = startHole;
   let t1up = 0;
+  let maxDeficitT1 = 0;
+  let numPressesT1 = 0;
+  let maxDeficitT2 = 0;
+  let numPressesT2 = 0;
+
   for (let h = startHole; h <= endHole; h++) {
     const hd = holes[h - 1];
     const b1 = Math.min(
@@ -80,17 +84,24 @@ export function computePresses(
     if (b1 === Infinity || b2 === Infinity) continue;
     if (b1 < b2) t1up++;
     else if (b2 < b1) t1up--;
+
     const holesLeft = endHole - h;
     if (holesLeft > 0) {
-      if (t1up <= -pressAt && (presses.length === 0 || presses[presses.length - 1].startHole <= h - pressAt)) {
-        const lastPress = presses[presses.length - 1];
-        if (!lastPress || lastPress.startHole < h) {
+      if (t1up < 0) {
+        const deficit = -t1up;
+        if (deficit > maxDeficitT1) maxDeficitT1 = deficit;
+        const nextMultiple = (numPressesT1 + 1) * pressAt;
+        if (maxDeficitT1 >= nextMultiple) {
           presses.push({ startHole: h + 1, endHole, stake, by: 't1' });
+          numPressesT1++;
         }
-      } else if (t1up >= pressAt && (presses.length === 0 || presses[presses.length - 1].startHole <= h - pressAt)) {
-        const lastPress = presses[presses.length - 1];
-        if (!lastPress || lastPress.startHole < h) {
+      } else if (t1up > 0) {
+        const deficit = t1up;
+        if (deficit > maxDeficitT2) maxDeficitT2 = deficit;
+        const nextMultiple = (numPressesT2 + 1) * pressAt;
+        if (maxDeficitT2 >= nextMultiple) {
           presses.push({ startHole: h + 1, endHole, stake, by: 't2' });
+          numPressesT2++;
         }
       }
     }
