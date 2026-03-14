@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRoundStore } from '../../src/store/roundStore';
@@ -38,6 +38,7 @@ export default function AddSideBetScreen() {
     birdie: false,
   });
   const [amount, setAmount] = useState<string>('5');
+  const handleAddInProgress = useRef(false);
 
   const typeInfo = SIDE_BET_TYPES.find((t) => t.id === type);
   const needsHole = typeInfo && !typeInfo.noHole;
@@ -57,8 +58,10 @@ export default function AddSideBetScreen() {
   const toggleBirdie = () => setSelections((prev) => ({ ...prev, birdie: !prev.birdie }));
 
   const handleAdd = () => {
+    if (handleAddInProgress.current) return;
+    handleAddInProgress.current = true;
     const prevBets = Array.isArray(round?.sideBets) ? round.sideBets : [];
-    const amountNum = Math.max(1, parseInt(amount, 10) || 5);
+    const amountNum = Math.max(1, Math.floor(Number(amount)) || 0) || 5;
     let baseId = Date.now();
     const newBets: { id: number; type: string; hole: number | null; amount: number }[] = [];
 
@@ -75,6 +78,7 @@ export default function AddSideBetScreen() {
     }
 
     setRound({ sideBets: [...prevBets, ...newBets] });
+    handleAddInProgress.current = false;
     router.back();
   };
 

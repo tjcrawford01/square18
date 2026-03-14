@@ -313,7 +313,7 @@ export default function GameScreen() {
                   </Text>
                   <Text style={styles.sideBetSub}>
                     {players.length === 2
-                      ? `winner gets $${sb.amount}`
+                      ? `Winner gets $${sb.amount}`
                       : `$${sb.amount} per loser · winner gets $${sb.amount * (players.length - 1)}`}
                   </Text>
                 </View>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useRoundStore } from '../../src/store/roundStore';
@@ -28,12 +28,13 @@ export default function HoleScreen() {
   const params = useLocalSearchParams<{ hole: string }>();
   const holeNum = Math.min(18, Math.max(1, parseInt(params.hole ?? '1', 10) || 1));
   const router = useRouter();
-  const { round, scores, setScores, setCurrentHole, sideBetWinners, setSideBetWinner, setWolfDecision } = useRoundStore();
+  const { round, scores, setScores, setCurrentHole, sideBetWinners, setSideBetWinner, setWolfDecision, players: storePlayers } = useRoundStore();
   const wolfDecisions = round.wolfDecisions ?? {};
   const selectedCourse = useCourseStore((s) => s.selectedCourse);
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [scorecardVisible, setScorecardVisible] = useState(false);
   const [wolfPickerVisible, setWolfPickerVisible] = useState(false);
+  const hole1ReminderShown = useRef(false);
 
   const isWolf = round.gameStyle === 'wolf';
   const wolfIndex = isWolf ? getWolfIndexForHole(holeNum, round.players.length) : 0;
@@ -49,6 +50,16 @@ export default function HoleScreen() {
       setWolfPickerVisible(true);
     }
   }, [isWolf, holeNum, wolfDecision, wolfPlayer]);
+
+  useEffect(() => {
+    if (holeNum === 1 && !hole1ReminderShown.current) {
+      const upcoming = round.sideBets.filter((sb) => sb.hole === 1 && sb.type !== 'birdie');
+      if (upcoming.length > 0) {
+        hole1ReminderShown.current = true;
+        setPopup((prev) => prev ?? { mode: 'remind', bets: upcoming, index: 0, nextHole: 1 });
+      }
+    }
+  }, [holeNum, round.sideBets]);
 
   const tee = getTeeOrDefault(selectedCourse, round.tee);
   const holes = getHolesForTee(selectedCourse, round.tee);
@@ -108,14 +119,21 @@ export default function HoleScreen() {
     if (nextIndex < popup.bets.length) {
       setPopup({ ...popup, index: nextIndex });
     } else {
-      if (popup.mode === 'remind' && popup.nextHole) router.push(`/round/${popup.nextHole}`);
+      if (popup.mode === 'remind' && popup.nextHole && popup.nextHole !== holeNum) {
+        router.push(`/round/${popup.nextHole}`);
+      }
       setPopup(null);
     }
   };
 
   const currentSb = popup?.bets[popup.index];
   const sbType = currentSb ? SIDE_BET_TYPES.find((t) => t.id === currentSb.type) : null;
-  const winnerReceives = currentSb ? currentSb.amount * (round.players.length - 1) : 0;
+  const numPlayers = round.players?.length ?? storePlayers?.length ?? 0;
+  const winnerReceives = currentSb ? currentSb.amount * Math.max(0, numPlayers - 1) : 0;
+  if (currentSb) {
+    console.log('winnerReceives calc:', { playersLength: numPlayers, amount: currentSb.amount, winnerReceives });
+  }
+
   const chosenWinner = currentSb ? sideBetWinners[currentSb.id] : undefined;
   const winnerPlayer = chosenWinner ? round.players.find((p) => p.id === chosenWinner) : null;
 
