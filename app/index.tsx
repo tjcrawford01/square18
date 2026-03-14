@@ -215,7 +215,7 @@ export default function SplashScreen() {
     <View style={styles.container}>
       <View style={styles.content}>
         <Image source={require('../assets/square18logo.png')} style={styles.logo} resizeMode="contain" />
-        <Text style={styles.tagline}>Set it · Play it · Square it</Text>
+        <Text style={styles.tagline}>set it · play it · square it</Text>
       </View>
 
       {showCourseSearch ? (
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  logo: { width: 220, height: 88, marginBottom: 20 },
+  logo: { width: 480, height: 192, marginBottom: 24 },
   tagline: { color: Colors.gold, fontSize: 20, letterSpacing: 4 },
   card: {
     backgroundColor: Colors.cream,

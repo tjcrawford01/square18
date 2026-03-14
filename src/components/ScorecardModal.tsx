@@ -114,9 +114,9 @@ export function ScorecardModal({
             <Text style={[styles.cell, styles.cellNarrow]}>{parTotal}</Text>
             <Text style={[styles.cell, styles.cellNarrow]}></Text>
             {playerTotals.map((tot, i) => (
-              <Text key={players[i].id} style={[styles.cell, styles.cellPlayer, styles.totalText]}>
-                {tot}
-              </Text>
+              <View key={players[i].id} style={styles.cellPlayer}>
+                <Text style={[styles.scoreVal, styles.totalText]}>{tot}</Text>
+              </View>
             ))}
           </View>
         )}
@@ -148,9 +148,11 @@ export function ScorecardModal({
               <Text style={[styles.cell, styles.cellNarrow]}>{holes.reduce((s, h) => s + h.par, 0)}</Text>
               <Text style={[styles.cell, styles.cellNarrow]}></Text>
               {players.map((p) => (
-                <Text key={p.id} style={[styles.cell, styles.cellPlayer, styles.totalText]}>
-                  {holes.reduce((s, h) => s + (scores[p.id]?.[h.hole] ?? 0), 0)}
-                </Text>
+                <View key={p.id} style={styles.cellPlayer}>
+                  <Text style={[styles.scoreVal, styles.totalText]}>
+                    {holes.reduce((s, h) => s + (scores[p.id]?.[h.hole] ?? 0), 0)}
+                  </Text>
+                </View>
               ))}
             </View>
           </ScrollView>

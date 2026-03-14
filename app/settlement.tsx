@@ -14,7 +14,7 @@ import { calculateWolf } from '../src/engine/wolf';
 import { countBirdies } from '../src/engine/birdies';
 import { computeSideBetNet } from '../src/engine/sideBets';
 import { getBiggestMoment, getBiggestChoke, getMomentumSwing } from '../src/engine/highlights';
-import { buildSettlementText, buildScorecardShareText, minTransactions, venmoDeepLink, venmoLink, iMessageLink } from '../src/engine/settlement';
+import { buildSettlementText, buildScorecardShareText, minTransactions, venmoDeepLink, venmoLink } from '../src/engine/settlement';
 import { Card } from '../src/components/Card';
 import { SectionLabel } from '../src/components/SectionLabel';
 import { Colors } from '../src/theme/colors';
@@ -179,8 +179,6 @@ export default function SettlementScreen() {
       );
     }
   };
-  const openiMessage = () => Linking.openURL(iMessageLink(msgText));
-
   const shareScorecard = () => {
     const message = buildScorecardShareText({
       round: { tee: round.tee, gameStyle: round.gameStyle },
@@ -496,11 +494,8 @@ export default function SettlementScreen() {
         })()}
 
         <View style={styles.sendSection}>
-          <Pressable style={styles.sendBtn} onPress={openiMessage}>
-            <Text style={styles.sendBtnText}>📱 Send Group Settlement Text</Text>
-          </Pressable>
           <Pressable style={styles.shareResultsBtn} onPress={handleShareResults}>
-            <Text style={styles.shareResultsBtnText}>Share Results 📸</Text>
+            <Text style={styles.shareResultsBtnText}>Share Results 🏌️</Text>
           </Pressable>
           <View style={styles.preview}>
             <Text style={styles.previewLabel}>PREVIEW</Text>
@@ -620,16 +615,6 @@ const styles = StyleSheet.create({
   winnerChipText: { fontSize: 12, color: Colors.ink },
   changeWinner: { color: Colors.gray, fontSize: 11, marginTop: 4 },
   sendSection: { marginTop: 16 },
-  sendBtn: {
-    width: '100%',
-    paddingVertical: 18,
-    backgroundColor: Colors.gold,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderBottomWidth: 4,
-    borderBottomColor: '#8a6a20',
-  },
-  sendBtnText: { fontSize: 17, fontWeight: '700', color: Colors.ink },
   shareResultsBtn: {
     width: '100%',
     marginTop: 10,
