@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRoundStore } from '../../src/store/roundStore';
@@ -37,8 +37,11 @@ export default function AddSideBetScreen() {
     ld: [],
     birdie: false,
   });
-  const [amount, setAmount] = useState<string>('5');
-  const handleAddInProgress = useRef(false);
+  const [amounts, setAmounts] = useState<{ ctp: string; ld: string; birdie: string }>({
+    ctp: '5',
+    ld: '5',
+    birdie: '5',
+  });
 
   const typeInfo = SIDE_BET_TYPES.find((t) => t.id === type);
   const needsHole = typeInfo && !typeInfo.noHole;
@@ -58,27 +61,27 @@ export default function AddSideBetScreen() {
   const toggleBirdie = () => setSelections((prev) => ({ ...prev, birdie: !prev.birdie }));
 
   const handleAdd = () => {
-    if (handleAddInProgress.current) return;
-    handleAddInProgress.current = true;
     const prevBets = Array.isArray(round?.sideBets) ? round.sideBets : [];
-    const amountNum = Math.max(1, Math.floor(Number(amount)) || 0) || 5;
+    const ctpAmount = Math.max(1, Math.floor(Number(amounts.ctp)) || 0) || 5;
+    const ldAmount = Math.max(1, Math.floor(Number(amounts.ld)) || 0) || 5;
+    const birdieAmount = Math.max(1, Math.floor(Number(amounts.birdie)) || 0) || 5;
     let baseId = Date.now();
     const newBets: { id: number; type: string; hole: number | null; amount: number }[] = [];
 
     selections.ctp.forEach((h, i) => {
-      newBets.push({ id: baseId + i, type: 'ctp', hole: h, amount: amountNum });
+      newBets.push({ id: baseId + i, type: 'ctp', hole: h, amount: ctpAmount });
     });
     baseId += selections.ctp.length;
     selections.ld.forEach((h, i) => {
-      newBets.push({ id: baseId + i, type: 'longdrive', hole: h, amount: amountNum });
+      newBets.push({ id: baseId + i, type: 'longdrive', hole: h, amount: ldAmount });
     });
     baseId += selections.ld.length;
     if (selections.birdie) {
-      newBets.push({ id: baseId, type: 'birdie', hole: null, amount: amountNum });
+      newBets.push({ id: baseId, type: 'birdie', hole: null, amount: birdieAmount });
     }
 
+    console.log('[add-side-bet] newBets before setRound:', newBets);
     setRound({ sideBets: [...prevBets, ...newBets] });
-    handleAddInProgress.current = false;
     router.back();
   };
 
@@ -150,8 +153,13 @@ export default function AddSideBetScreen() {
         <SectionLabel>Amount per player ($)</SectionLabel>
         <TextInput
           style={styles.amountInput}
-          value={amount}
-          onChangeText={setAmount}
+          value={amounts[type === 'ctp' ? 'ctp' : type === 'longdrive' ? 'ld' : 'birdie']}
+          onChangeText={(text) =>
+            setAmounts((prev) => ({
+              ...prev,
+              [type === 'ctp' ? 'ctp' : type === 'longdrive' ? 'ld' : 'birdie']: text,
+            }))
+          }
           keyboardType="number-pad"
           placeholder="5"
         />

@@ -193,11 +193,10 @@ export default function SplashScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.content}>
-          <Text style={styles.emoji}>⛳</Text>
           <Text style={styles.disclaimerTitle}>Before You Play</Text>
           <Text style={styles.disclaimerBody}>
             square18 is a score tracking and settlement calculation tool. All payments are made
-            directly between players via third-party services. square18 does not process, hold, or
+            directly between players via third-party services. square18 does not process, hold or
             transfer funds.
           </Text>
           <Text style={styles.disclaimerBody}>

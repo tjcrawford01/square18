@@ -22,6 +22,17 @@ export interface SideBet {
   amount: number;
 }
 
+/** Deduplicate side bets by type+hole; keeps first occurrence. Handles double-call from Add button. */
+export function dedupeSideBets(bets: SideBet[]): SideBet[] {
+  const seen = new Set<string>();
+  return bets.filter((sb) => {
+    const key = `${sb.type}-${sb.hole ?? 'birdie'}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export interface WolfDecision {
   wolfIndex: number;
   partnerId: number | null;
@@ -132,9 +143,13 @@ export const useRoundStore = create<RoundState>()(
         })),
 
       setRound: (round) =>
-        set((s) => ({
-          round: typeof round === 'function' ? round(s.round) : { ...s.round, ...round },
-        })),
+        set((s) => {
+          const next = typeof round === 'function' ? round(s.round) : { ...s.round, ...round };
+          if (Array.isArray(next.sideBets)) {
+            return { round: { ...next, sideBets: dedupeSideBets(next.sideBets) } };
+          }
+          return { round: next };
+        }),
 
       setScores: (scores) =>
         set((s) => ({

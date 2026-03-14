@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useRoundStore } from '../../src/store/roundStore';
+import { useRoundStore, dedupeSideBets } from '../../src/store/roundStore';
 import { useCourseStore } from '../../src/store/courseStore';
 import { getTeeOrDefault, getHolesForTee } from '../../src/types/course';
 import { SIDE_BET_TYPES } from '../../src/data/sideBetTypes';
@@ -53,7 +53,14 @@ export default function HoleScreen() {
 
   useEffect(() => {
     if (holeNum === 1 && !hole1ReminderShown.current) {
-      const upcoming = round.sideBets.filter((sb) => sb.hole === 1 && sb.type !== 'birdie');
+      // Only hole-specific bets (CTP, Longest Drive) — never Birdie Pool
+      const upcoming = dedupeSideBets(
+        round.sideBets.filter((sb) => {
+          const t = SIDE_BET_TYPES.find((x) => x.id === sb.type);
+          return t && !t.noHole && sb.hole === 1;
+        })
+      );
+      console.log('[hole 1 reminder] popup bets:', upcoming.map((b) => ({ type: b.type, hole: b.hole, amount: b.amount })));
       if (upcoming.length > 0) {
         hole1ReminderShown.current = true;
         setPopup((prev) => prev ?? { mode: 'remind', bets: upcoming, index: 0, nextHole: 1 });
@@ -81,8 +88,8 @@ export default function HoleScreen() {
     setScores(ns);
     const nowAllScored = round.players.every((p) => (p.id === pid ? score : scores[p.id]?.[holeNum]) != null);
     if (nowAllScored && !popup) {
-      const pending = round.sideBets.filter(
-        (sb) => sb.hole === holeNum && sb.type !== 'birdie' && sideBetWinners[sb.id] == null
+      const pending = dedupeSideBets(
+        round.sideBets.filter((sb) => sb.hole === holeNum && sb.type !== 'birdie' && sideBetWinners[sb.id] == null)
       );
       if (pending.length > 0) setPopup({ mode: 'winner', bets: pending, index: 0 });
     }
@@ -90,7 +97,7 @@ export default function HoleScreen() {
 
   const allScored = round.players.every((p) => scores[p.id]?.[holeNum] != null);
   const hasAnyScores = Object.values(scores).some((s) => s && Object.keys(s).length > 0);
-  const sideBetsHere = round.sideBets.filter((sb) => sb.hole === holeNum);
+  const sideBetsHere = dedupeSideBets(round.sideBets.filter((sb) => sb.hole === holeNum));
   const skinResults = round.gameStyle === 'skins' ? computeSkins(scores, hcps, round.players.map((p) => p.id), holes) : [];
   const carryHere = skinResults.find((r) => r.hole === holeNum)?.carryover ?? 0;
   const five31Results =
@@ -105,7 +112,13 @@ export default function HoleScreen() {
       router.replace('/settlement');
       return;
     }
-    const upcoming = round.sideBets.filter((sb) => sb.hole === nextHole && sb.type !== 'birdie');
+    // Only hole-specific bets (CTP, Longest Drive) — never Birdie Pool
+    const upcoming = dedupeSideBets(
+      round.sideBets.filter((sb) => {
+        const t = SIDE_BET_TYPES.find((x) => x.id === sb.type);
+        return t && !t.noHole && sb.hole === nextHole;
+      })
+    );
     if (upcoming.length > 0) {
       setPopup({ mode: 'remind', bets: upcoming, index: 0, nextHole });
     } else {
@@ -130,9 +143,6 @@ export default function HoleScreen() {
   const sbType = currentSb ? SIDE_BET_TYPES.find((t) => t.id === currentSb.type) : null;
   const numPlayers = round.players?.length ?? storePlayers?.length ?? 0;
   const winnerReceives = currentSb ? currentSb.amount * Math.max(0, numPlayers - 1) : 0;
-  if (currentSb) {
-    console.log('winnerReceives calc:', { playersLength: numPlayers, amount: currentSb.amount, winnerReceives });
-  }
 
   const chosenWinner = currentSb ? sideBetWinners[currentSb.id] : undefined;
   const winnerPlayer = chosenWinner ? round.players.find((p) => p.id === chosenWinner) : null;
@@ -271,7 +281,7 @@ export default function HoleScreen() {
       </ScrollView>
 
       {holeNum > 1 && round.gameStyle !== 'fivethreeone' && round.gameStyle !== 'wolf' && (
-        <ScoreboardPanel round={round} scores={scores} hcps={hcps} currentHole={holeNum} holes={holes} />
+        <ScoreboardPanel round={round} scores={scores} hcps={hcps} currentHole={holeNum} holes={holes} sideBetWinners={sideBetWinners} />
       )}
       {holeNum > 1 && round.gameStyle === 'fivethreeone' && five31Results.length === 3 && (
         <View style={styles.five31Panel}>
@@ -395,13 +405,12 @@ export default function HoleScreen() {
                     <Text style={styles.modalEmoji}>🏅</Text>
                     <Text style={styles.modalSubtitleDark}>HOLE {holeNum} RESULT</Text>
                     <Text style={styles.modalTitleDark}>{sbType.label}</Text>
-                    <Text style={styles.modalDescDark}>Winner gets ${winnerReceives} · who won it?</Text>
                     {!winnerPlayer ? (
                       <>
-                        {round.players.map((p) => (
+                        {round.players.map((p, i) => (
                           <Pressable
                             key={p.id}
-                            style={styles.winnerBtn}
+                            style={[styles.winnerBtn, i === 0 && { marginTop: 8 }]}
                             onPress={() => setSideBetWinner(currentSb.id, p.id)}
                           >
                             <Text style={styles.winnerBtnText}>{p.name}</Text>
@@ -621,7 +630,7 @@ const styles = StyleSheet.create({
   modalPrimaryBtnText: { fontSize: 16, fontWeight: '700', color: Colors.ink },
   modalSubtitleDark: { color: Colors.gray, fontSize: 10, letterSpacing: 2, marginBottom: 4, textAlign: 'center' },
   modalTitleDark: { color: Colors.ink, fontSize: 22, fontWeight: '700', textAlign: 'center' },
-  modalDescDark: { color: Colors.gray, fontSize: 13, marginTop: 4, textAlign: 'center' },
+  modalDescDark: { color: Colors.gray, fontSize: 13, marginTop: 4, marginBottom: 16, textAlign: 'center' },
   winnerBtn: {
     width: '100%',
     paddingVertical: 14,
@@ -638,6 +647,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.forest,
     borderRadius: 12,
     padding: 20,
+    marginTop: 16,
     marginBottom: 16,
     borderBottomWidth: 3,
     borderBottomColor: Colors.gold,

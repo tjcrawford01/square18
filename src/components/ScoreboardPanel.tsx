@@ -2,9 +2,17 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { teamMatchResult, computePresses } from '../engine/matchPlay';
 import { computeSkins } from '../engine/skins';
+import { computeSideBetNet } from '../engine/sideBets';
 import type { Scores, Handicaps } from '../engine/matchPlay';
 import type { HoleInfo } from '../types/course';
 import { Colors } from '../theme/colors';
+
+interface SideBetLike {
+  id: number;
+  type: string;
+  hole: number | null;
+  amount: number;
+}
 
 interface RoundLike {
   gameStyle: 'matchplay' | 'skins';
@@ -14,6 +22,7 @@ interface RoundLike {
   autoPress: boolean;
   pressAt: number;
   skinValue: number;
+  sideBets?: SideBetLike[];
 }
 
 interface ScoreboardPanelProps {
@@ -24,11 +33,15 @@ interface ScoreboardPanelProps {
   holes: HoleInfo[];
   firstHole?: number;
   lastHole?: number;
+  sideBetWinners?: Record<number, number>;
 }
 
-export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, firstHole = 1, lastHole = 18 }: ScoreboardPanelProps) {
+export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, firstHole = 1, lastHole = 18, sideBetWinners = {} }: ScoreboardPanelProps) {
   const isMatchPlay = round.gameStyle === 'matchplay';
   const holesPlayed = currentHole - firstHole;
+  const sideBetNet = round.sideBets?.length
+    ? computeSideBetNet(round.sideBets, sideBetWinners, round.players)
+    : null;
 
   if (isMatchPlay) {
     const t1 = round.teams[0].playerIds;
@@ -60,7 +73,13 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
         const pr = teamMatchResult(scores, hcps, t1, t2, p.startHole, Math.min(firstHole + holesPlayed, p.endHole), holes);
         pAmt += Math.sign(pr.result) * p.stake;
       });
-      const net = fAmt + bAmt + tAmt + pAmt;
+      let sbAmt = 0;
+      if (sideBetNet) {
+        const t1Net = t1.reduce((sum, id) => sum + (sideBetNet[id] ?? 0), 0);
+        const t2Net = t2.reduce((sum, id) => sum + (sideBetNet[id] ?? 0), 0);
+        sbAmt = t1Net - t2Net;
+      }
+      const net = fAmt + bAmt + tAmt + pAmt + sbAmt;
       dollarBar = { net, leader: net > 0 ? getTeamNames(t1) : net < 0 ? getTeamNames(t2) : null };
     }
 
@@ -171,10 +190,13 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
         {round.players.map((p) => {
           const firstName = p.name?.split(' ')[0] ?? p.initials ?? '?';
           const skinAmt = skinsWon[p.id] * perSkin;
-          const maxSkinAmt = Math.max(...round.players.map((q) => skinsWon[q.id] * perSkin));
-          const minSkinAmt = Math.min(...round.players.map((q) => skinsWon[q.id] * perSkin));
-          const isAhead = skinAmt === maxSkinAmt && maxSkinAmt > minSkinAmt;
-          const isBehind = skinAmt === minSkinAmt && maxSkinAmt > minSkinAmt;
+          const sbAmt = sideBetNet ? (sideBetNet[p.id] ?? 0) : 0;
+          const totalAmt = skinAmt + sbAmt;
+          const allTotals = round.players.map((q) => skinsWon[q.id] * perSkin + (sideBetNet ? (sideBetNet[q.id] ?? 0) : 0));
+          const maxSkinAmt = Math.max(...allTotals);
+          const minSkinAmt = Math.min(...allTotals);
+          const isAhead = totalAmt === maxSkinAmt && maxSkinAmt > minSkinAmt;
+          const isBehind = totalAmt === minSkinAmt && maxSkinAmt > minSkinAmt;
           return (
           <View key={p.id} style={styles.skinCell}>
             <Text style={styles.skinInitials}>{firstName}</Text>
@@ -183,7 +205,7 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
               styles.skinDollar,
               isAhead && styles.skinDollarUp,
               isBehind && styles.skinDollarDown,
-            ]}>${skinAmt}</Text>
+            ]}>${totalAmt}</Text>
           </View>
         );})}
       </View>
