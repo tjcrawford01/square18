@@ -115,7 +115,7 @@ export default function HoleScreen() {
 
   const currentSb = popup?.bets[popup.index];
   const sbType = currentSb ? SIDE_BET_TYPES.find((t) => t.id === currentSb.type) : null;
-  const pot = currentSb ? currentSb.amount * round.players.length : 0;
+  const winnerReceives = currentSb ? currentSb.amount * (round.players.length - 1) : 0;
   const chosenWinner = currentSb ? sideBetWinners[currentSb.id] : undefined;
   const winnerPlayer = chosenWinner ? round.players.find((p) => p.id === chosenWinner) : null;
 
@@ -185,7 +185,8 @@ export default function HoleScreen() {
             {sideBetsHere
               .map((sb) => {
                 const t = SIDE_BET_TYPES.find((x) => x.id === sb.type);
-                return `${t?.label} · $${sb.amount * round.players.length} pot`;
+                const wr = sb.amount * (round.players.length - 1);
+                return `${t?.label} · winner gets $${wr}`;
               })
               .join('  ·  ')}
           </Text>
@@ -366,7 +367,7 @@ export default function HoleScreen() {
                     <Text style={styles.modalEmoji}>🏅</Text>
                     <Text style={styles.modalSubtitle}>SIDE BET — HOLE {popup.nextHole}</Text>
                     <Text style={styles.modalTitle}>{sbType.label}</Text>
-                    <Text style={styles.modalPot}>${pot} pot</Text>
+                    <Text style={styles.modalPot}>Winner gets ${winnerReceives}</Text>
                     <Pressable style={styles.modalPrimaryBtn} onPress={advanceOrClose}>
                       <Text style={styles.modalPrimaryBtnText}>Got it — tee off 🏌️</Text>
                     </Pressable>
@@ -376,7 +377,7 @@ export default function HoleScreen() {
                     <Text style={styles.modalEmoji}>🏅</Text>
                     <Text style={styles.modalSubtitleDark}>HOLE {holeNum} RESULT</Text>
                     <Text style={styles.modalTitleDark}>{sbType.label}</Text>
-                    <Text style={styles.modalDescDark}>${pot} pot · who won it?</Text>
+                    <Text style={styles.modalDescDark}>Winner gets ${winnerReceives} · who won it?</Text>
                     {!winnerPlayer ? (
                       <>
                         {round.players.map((p) => (
@@ -397,7 +398,7 @@ export default function HoleScreen() {
                         <View style={styles.winnerCard}>
                           <Text style={styles.winnerLabel}>WINNER</Text>
                           <Text style={styles.winnerName}>{winnerPlayer.name}</Text>
-                          <Text style={styles.winnerPot}>+${pot}</Text>
+                          <Text style={styles.winnerPot}>+${winnerReceives}</Text>
                           <Text style={styles.winnerSub}>added to settlement</Text>
                         </View>
                         <Pressable onPress={() => setSideBetWinner(currentSb.id, undefined)}>

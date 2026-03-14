@@ -223,9 +223,9 @@ export function buildSettlementText(
       const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
       const winnerId = sideBetWinners[sb.id];
       const winner = winnerId ? round.players.find((p) => p.id === winnerId) : null;
-      const pot = sb.amount * round.players.length;
+      const winnerReceives = sb.amount * (round.players.length - 1);
       const holeLabel = sb.hole != null ? ` · Hole ${sb.hole}` : '';
-      lines.push(`${type?.label ?? sb.type}${holeLabel} · $${pot} pot`);
+      lines.push(`${type?.label ?? sb.type}${holeLabel} · winner receives $${winnerReceives}`);
       if (winner) {
         const birdieNote = sb.type === 'birdie' && birdieCounts[winner.id] != null ? ` (${birdieCounts[winner.id]} birdies)` : '';
         lines.push(`Winner: ${winner.id === scorekeeperId ? 'You' : winner.name}${birdieNote}`);

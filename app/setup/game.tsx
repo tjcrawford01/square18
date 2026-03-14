@@ -311,7 +311,11 @@ export default function GameScreen() {
                   <Text style={styles.sideBetTitle}>
                     {type?.label}{type?.noHole || sb.hole == null ? ' · 18 holes' : ` · Hole ${sb.hole}`}
                   </Text>
-                  <Text style={styles.sideBetSub}>${sb.amount} · pot {sb.amount * players.length}</Text>
+                  <Text style={styles.sideBetSub}>
+                    {players.length === 2
+                      ? `winner gets $${sb.amount}`
+                      : `$${sb.amount} per loser · winner gets $${sb.amount * (players.length - 1)}`}
+                  </Text>
                 </View>
                 <Pressable onPress={() => setRound({ sideBets: (round.sideBets || []).filter((s) => s.id !== sb.id) })}>
                   <Text style={styles.removeBtn}>×</Text>

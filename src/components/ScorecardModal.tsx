@@ -135,7 +135,7 @@ export function ScorecardModal({
             </Pressable>
           </View>
           <Text style={styles.sheetSub}>
-            {round.tee} · {gameLabel}
+            {courseName} · {round.tee} tees · {gameLabel}
           </Text>
           <Pressable style={styles.shareBtn} onPress={handleShare}>
             <Text style={styles.shareBtnText}>Share</Text>
