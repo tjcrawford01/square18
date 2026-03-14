@@ -32,32 +32,53 @@ export default function AddSideBetScreen() {
   const eligibleForType = (typeId: string) => eligibleHoles(typeId, holes);
 
   const [type, setType] = useState<string>('ctp');
-  const [selectedHoles, setSelectedHoles] = useState<number[]>([]);
+  const [selections, setSelections] = useState<{ ctp: number[]; ld: number[]; birdie: boolean }>({
+    ctp: [],
+    ld: [],
+    birdie: false,
+  });
   const [amount, setAmount] = useState<string>('5');
 
   const typeInfo = SIDE_BET_TYPES.find((t) => t.id === type);
   const needsHole = typeInfo && !typeInfo.noHole;
   const eligible = useMemo(() => eligibleForType(type), [type, holes]);
 
+  const selectedHoles = type === 'ctp' ? selections.ctp : type === 'longdrive' ? selections.ld : [];
+
   const toggleHole = (h: number) => {
-    setSelectedHoles((prev) =>
-      prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h].sort((a, b) => a - b)
-    );
+    const key = type === 'ctp' ? 'ctp' : 'ld';
+    setSelections((prev) => {
+      const arr = prev[key];
+      const next = arr.includes(h) ? arr.filter((x) => x !== h) : [...arr, h].sort((a, b) => a - b);
+      return { ...prev, [key]: next };
+    });
   };
+
+  const toggleBirdie = () => setSelections((prev) => ({ ...prev, birdie: !prev.birdie }));
 
   const handleAdd = () => {
     const prevBets = Array.isArray(round?.sideBets) ? round.sideBets : [];
     const amountNum = Math.max(1, parseInt(amount, 10) || 5);
-    const baseId = Date.now();
-    const newBets =
-      type === 'birdie' || !needsHole
-        ? [{ id: baseId, type, hole: null, amount: amountNum }]
-        : selectedHoles.map((h, i) => ({ id: baseId + i, type, hole: h, amount: amountNum }));
+    let baseId = Date.now();
+    const newBets: { id: number; type: string; hole: number | null; amount: number }[] = [];
+
+    selections.ctp.forEach((h, i) => {
+      newBets.push({ id: baseId + i, type: 'ctp', hole: h, amount: amountNum });
+    });
+    baseId += selections.ctp.length;
+    selections.ld.forEach((h, i) => {
+      newBets.push({ id: baseId + i, type: 'longdrive', hole: h, amount: amountNum });
+    });
+    baseId += selections.ld.length;
+    if (selections.birdie) {
+      newBets.push({ id: baseId, type: 'birdie', hole: null, amount: amountNum });
+    }
+
     setRound({ sideBets: [...prevBets, ...newBets] });
     router.back();
   };
 
-  const canAdd = !needsHole || selectedHoles.length > 0;
+  const canAdd = selections.ctp.length > 0 || selections.ld.length > 0 || selections.birdie;
 
   return (
     <KeyboardAvoidingView
@@ -72,10 +93,7 @@ export default function AddSideBetScreen() {
           {SIDE_BET_TYPES.map((t) => (
             <Pressable
               key={t.id}
-              onPress={() => {
-                setType(t.id);
-                setSelectedHoles([]);
-              }}
+              onPress={() => setType(t.id)}
               style={[styles.pickerOpt, type === t.id && styles.pickerOptActive]}
             >
               <Text style={[styles.pickerText, type === t.id && styles.pickerTextActive]}>{t.label}</Text>
@@ -84,7 +102,19 @@ export default function AddSideBetScreen() {
           ))}
         </View>
 
-        {needsHole && (
+        {type === 'birdie' ? (
+          <>
+            <SectionLabel>Birdie Pool</SectionLabel>
+            <Pressable
+              onPress={toggleBirdie}
+              style={[styles.holeChip, styles.birdieChip, selections.birdie && styles.holeChipActive]}
+            >
+              <Text style={[styles.holeChipText, selections.birdie && styles.holeChipTextActive]}>
+                {selections.birdie ? '✓ Selected' : 'Tap to add Birdie Pool'}
+              </Text>
+            </Pressable>
+          </>
+        ) : needsHole && (
           <>
             <SectionLabel>Holes (tap to select multiple)</SectionLabel>
             <View style={styles.holesWrap}>
@@ -122,7 +152,7 @@ export default function AddSideBetScreen() {
           placeholder="5"
         />
 
-        <PrimaryBtn label="Add side bet" onPress={handleAdd} disabled={!canAdd} />
+        <PrimaryBtn label="Add Side Bets" onPress={handleAdd} disabled={!canAdd} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -147,6 +177,7 @@ const styles = StyleSheet.create({
   pickerDesc: { fontSize: 11, color: Colors.gray, marginTop: 2 },
   pickerDescActive: { fontSize: 11, color: Colors.cream, marginTop: 2, opacity: 0.9 },
   holesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  birdieChip: { marginBottom: 16 },
   holeChip: {
     paddingVertical: 8,
     paddingHorizontal: 12,

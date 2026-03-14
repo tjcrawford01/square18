@@ -25,7 +25,7 @@ export default function PlayersScreen() {
   const { players, setPlayers } = useRoundStore();
   const safePlayers = Array.isArray(players) ? players : [];
   const [editing, setEditing] = useState<number | null>(null);
-  const [editingName, setEditingName] = useState<string>('');
+  const [editingNameByPlayer, setEditingNameByPlayer] = useState<Record<number, string>>({});
   const [editingHcp, setEditingHcp] = useState<{ playerId: number; value: string } | null>(null);
 
   const updatePlayer = (id: number, field: keyof Player, value: string | number) => {
@@ -49,14 +49,13 @@ export default function PlayersScreen() {
     setPlayers((ps) => (Array.isArray(ps) ? ps : []).filter((p) => p.id !== id));
   };
 
-  const handleNameBlur = (p: Player) => {
-    const name = (editingName || p.name).trim();
-    const initials = initialsFromName(name);
-    updatePlayer(p.id, 'name', name);
-    updatePlayer(p.id, 'initials', initials);
-    setEditing(null);
-    setEditingName('');
+  const handleNameChange = (p: Player, text: string) => {
+    setEditingNameByPlayer((prev) => ({ ...prev, [p.id]: text }));
+    updatePlayer(p.id, 'name', text);
+    updatePlayer(p.id, 'initials', initialsFromName(text));
   };
+
+  const displayName = (p: Player) => editingNameByPlayer[p.id] ?? p.name;
 
   return (
     <View style={styles.container}>
@@ -78,14 +77,14 @@ export default function PlayersScreen() {
                 {editing === p.id ? (
                   <TextInput
                     autoFocus
-                    value={editingName || p.name}
-                    onChangeText={setEditingName}
-                    onBlur={() => handleNameBlur(p)}
+                    value={displayName(p)}
+                    onChangeText={(t) => handleNameChange(p, t)}
+                    onBlur={() => { setEditing(null); setEditingNameByPlayer((prev) => { const next = { ...prev }; delete next[p.id]; return next; }); }}
                     style={styles.nameInput}
                     placeholder="Name"
                   />
                 ) : (
-                  <Pressable onPress={() => { setEditing(p.id); setEditingName(p.name); }}>
+                  <Pressable onPress={() => { setEditing(p.id); setEditingNameByPlayer((prev) => ({ ...prev, [p.id]: p.name })); }}>
                     <Text style={styles.name}>{p.name}</Text>
                   </Pressable>
                 )}
@@ -126,7 +125,7 @@ export default function PlayersScreen() {
                 </View>
               </View>
               <View style={styles.actions}>
-                <Pressable onPress={() => setEditing(p.id)}>
+                <Pressable onPress={() => { setEditing(p.id); setEditingNameByPlayer((prev) => ({ ...prev, [p.id]: p.name })); }}>
                   <Text style={styles.editBtn}>✎</Text>
                 </Pressable>
                 {safePlayers.length > 2 && (

@@ -18,6 +18,7 @@ import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../src/theme/colors';
 import { useCourseStore } from '../src/store/courseStore';
+import { useRoundStore } from '../src/store/roundStore';
 import {
   searchByLocation,
   searchByName,
@@ -39,6 +40,7 @@ const SEARCH_MIN_LEN = 3;
 export default function SplashScreen() {
   const router = useRouter();
   const { selectedCourse, setSelectedCourse } = useCourseStore();
+  const resetRound = useRoundStore((s) => s.resetRound);
   const [showDisclaimer, setShowDisclaimer] = useState<boolean | null>(null);
   const [nearbyCourses, setNearbyCourses] = useState<CourseListItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -301,6 +303,7 @@ export default function SplashScreen() {
           onPress={() => {
             if (!canStart) return;
             try {
+              resetRound();
               router.push('/setup/players');
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);

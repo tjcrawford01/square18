@@ -71,8 +71,8 @@ export function buildDefaultTeams(players: Player[]): Team[] {
 }
 
 const DEFAULT_PLAYERS: Player[] = [
-  { id: 1, name: 'You', initials: 'YO', index: 8.4, venmo: '@you' },
-  { id: 2, name: 'Mike', initials: 'MG', index: 14.2, venmo: '@mike-g' },
+  { id: 1, name: 'Player 1', initials: 'P1', index: 0, venmo: '' },
+  { id: 2, name: 'Player 2', initials: 'P2', index: 0, venmo: '' },
 ];
 
 const DEFAULT_TEAMS = buildDefaultTeams(DEFAULT_PLAYERS);
@@ -203,6 +203,14 @@ export const useRoundStore = create<RoundState>()(
         if (!Array.isArray(merged.players) || merged.players.length < 2) {
           console.log('[RoundStore] Invalid players in persisted state, using defaults');
           merged.players = currentState.players;
+        }
+        merged.players = merged.players.map((p: Player) =>
+          p.name === 'You' ? { ...p, name: 'Player 1', initials: 'P1' } : p
+        );
+        if (merged.round?.players) {
+          merged.round.players = merged.round.players.map((p: Player) =>
+            p.name === 'You' ? { ...p, name: 'Player 1', initials: 'P1' } : p
+          );
         }
         if (!Array.isArray(merged.teams)) {
           merged.teams = buildDefaultTeams(merged.players);
