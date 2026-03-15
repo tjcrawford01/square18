@@ -24,13 +24,15 @@ interface ScorecardModalProps {
   wolfDecisions?: WolfDecisions;
 }
 
-function scoreColor(gross: number, par: number): keyof typeof Colors {
+type ScoreShape = 'doubleCircle' | 'circle' | 'none' | 'square' | 'doubleSquare';
+
+function scoreShape(gross: number, par: number): ScoreShape {
   const diff = gross - par;
-  if (diff <= -2) return 'gold';
-  if (diff === -1) return 'fairway';
-  if (diff === 0) return 'ink';
-  if (diff === 1) return 'ink';
-  return 'red';
+  if (diff <= -2) return 'doubleCircle';  // eagle or better
+  if (diff === -1) return 'circle';        // birdie
+  if (diff === 0) return 'none';           // par
+  if (diff === 1) return 'square';        // bogey
+  return 'doubleSquare';                   // double bogey or worse
 }
 
 export function ScorecardModal({
@@ -64,6 +66,65 @@ export function ScorecardModal({
     return null;
   };
 
+  const borderColor = Colors.ink;
+
+  const ScoreCell = ({ gross, par, stroke, wolfRole }: { gross: number | undefined; par: number; stroke: boolean; wolfRole: string | null }) => {
+    if (gross == null) {
+      return (
+        <View style={styles.cellPlayer}>
+          <Text style={[styles.scoreVal, styles.scoreBlank]}>—</Text>
+          {wolfRole != null && <Text style={styles.wolfRole}>{wolfRole}</Text>}
+        </View>
+      );
+    }
+    const shape = scoreShape(gross, par);
+
+    const wrappedScore = (() => {
+      if (shape === 'none') return <Text style={[styles.scoreVal, { color: Colors.ink }]}>{gross}</Text>;
+      if (shape === 'circle') {
+        return (
+          <View style={[styles.scoreCircle, { borderColor }]}>
+            <Text style={[styles.scoreVal, { color: Colors.ink }]}>{gross}</Text>
+          </View>
+        );
+      }
+      if (shape === 'doubleCircle') {
+        return (
+          <View style={[styles.scoreDoubleOuter, styles.scoreCircleOuter, { borderColor }]}>
+            <View style={[styles.scoreDoubleInner, styles.scoreCircleInner, { borderColor }]}>
+              <Text style={[styles.scoreVal, { color: Colors.ink }]}>{gross}</Text>
+            </View>
+          </View>
+        );
+      }
+      if (shape === 'square') {
+        return (
+          <View style={[styles.scoreSquare, { borderColor }]}>
+            <Text style={[styles.scoreVal, { color: Colors.ink }]}>{gross}</Text>
+          </View>
+        );
+      }
+      if (shape === 'doubleSquare') {
+        return (
+          <View style={[styles.scoreDoubleOuter, styles.scoreSquareOuter, { borderColor }]}>
+            <View style={[styles.scoreDoubleInner, styles.scoreSquareInner, { borderColor }]}>
+              <Text style={[styles.scoreVal, { color: Colors.ink }]}>{gross}</Text>
+            </View>
+          </View>
+        );
+      }
+      return <Text style={[styles.scoreVal, { color: Colors.ink }]}>{gross}</Text>;
+    })();
+
+    return (
+      <View style={styles.cellPlayer}>
+        {wrappedScore}
+        {stroke && <Text style={styles.strokeDot}>●</Text>}
+        {wolfRole != null && <Text style={styles.wolfRole}>{wolfRole}</Text>}
+      </View>
+    );
+  };
+
   const renderTable = (start: number, end: number, showOutTotal: boolean) => {
     const slice = holes.slice(start, end);
     const parTotal = slice.reduce((s, h) => s + h.par, 0);
@@ -90,20 +151,15 @@ export function ScorecardModal({
             {players.map((p) => {
               const gross = scores[p.id]?.[h.hole];
               const stroke = gross != null && strokesOnHole(hcps[p.id] ?? 0, h.si) > 0;
-              const color = gross != null ? scoreColor(gross, h.par) : 'gray';
               const wolfRole = getWolfRole(h.hole, p.id);
               return (
-                <View key={p.id} style={styles.cellPlayer}>
-                  {gross != null ? (
-                    <>
-                      <Text style={[styles.scoreVal, { color: Colors[color] }]}>{gross}</Text>
-                      {stroke && <Text style={styles.strokeDot}>●</Text>}
-                    </>
-                  ) : (
-                    <Text style={styles.scoreBlank}>—</Text>
-                  )}
-                  {wolfRole != null && <Text style={styles.wolfRole}>{wolfRole}</Text>}
-                </View>
+                <ScoreCell
+                  key={p.id}
+                  gross={gross}
+                  par={h.par}
+                  stroke={stroke}
+                  wolfRole={wolfRole}
+                />
               );
             })}
           </View>
@@ -225,7 +281,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 8,
   },
   cell: { fontFamily: 'monospace', fontSize: 12 },
-  cellHole: { width: 32, color: Colors.ink },
+  cellHole: { width: 38, color: Colors.ink },
   cellNarrow: { width: 28, textAlign: 'center' as const },
   headerCell: { color: Colors.cream },
   cellPlayer: {
@@ -237,7 +293,41 @@ const styles = StyleSheet.create({
   },
   scoreVal: { fontWeight: '700', fontSize: 13 },
   scoreBlank: { color: Colors.gray, fontSize: 13 },
-  strokeDot: { fontSize: 8, color: Colors.forest },
+  strokeDot: { fontSize: 8, color: Colors.ink },
   totalText: { fontWeight: '700', color: Colors.ink },
   wolfRole: { fontSize: 9, color: Colors.gray, marginLeft: 2 },
+  scoreCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreDoubleOuter: {
+    width: 28,
+    height: 28,
+    padding: 2,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreDoubleInner: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreCircleOuter: { borderRadius: 14 },
+  scoreCircleInner: { borderRadius: 11, borderWidth: 1 },
+  scoreSquare: {
+    width: 22,
+    height: 22,
+    borderRadius: 0,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreSquareOuter: { borderRadius: 0 },
+  scoreSquareInner: { borderRadius: 0, borderWidth: 1 },
 });

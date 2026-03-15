@@ -49,6 +49,12 @@ export interface Press {
   by: 't1' | 't2';
 }
 
+/**
+ * Compute auto-presses for a nine. Each press is an independent match starting at All Square
+ * from the next hole after it was triggered through the end of the nine. The press result is
+ * whoever wins more holes in that range — it does NOT carry the existing deficit.
+ * Settlement: original nine + each press are settled separately, each worth the same stake.
+ */
 export function computePresses(
   scores: Scores,
   hcps: Handicaps,
@@ -157,6 +163,7 @@ export function computeMatchSettlement(
     const frontPresses = numHoles === 'back9' ? [] : computePresses(scores, hcps, t1ids, t2ids, 1, 9, stakes.front, pressAt, holes);
     const backPresses = numHoles === 'front9' ? [] : computePresses(scores, hcps, t1ids, t2ids, 10, 18, stakes.back, pressAt, holes);
     [...frontPresses, ...backPresses].forEach((p) => {
+      // Each press is a fresh 0-0 match from startHole to endHole — no deficit carried over
       const pr = teamMatchResult(scores, hcps, t1ids, t2ids, p.startHole, p.endHole, holes);
       const amt = Math.sign(pr.result) * p.stake;
       pressAmt += amt;

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { teamMatchResult, computePresses } from '../engine/matchPlay';
 import { computeSkins } from '../engine/skins';
 import { computeSideBetNet } from '../engine/sideBets';
+import { countBirdies, computeBirdiePoolResult } from '../engine/birdies';
 import type { Scores, Handicaps } from '../engine/matchPlay';
 import type { HoleInfo } from '../types/course';
 import { Colors } from '../theme/colors';
@@ -39,8 +40,16 @@ interface ScoreboardPanelProps {
 export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, firstHole = 1, lastHole = 18, sideBetWinners = {} }: ScoreboardPanelProps) {
   const isMatchPlay = round.gameStyle === 'matchplay';
   const holesPlayed = currentHole - firstHole;
+  const holesPlayedSoFar = holes.filter((h) => h.hole >= firstHole && h.hole <= currentHole);
   const sideBetNet = round.sideBets?.length
     ? computeSideBetNet(round.sideBets, sideBetWinners, round.players)
+    : null;
+  const birdiePool = round.sideBets?.find((sb) => sb.type === 'birdie');
+  const birdieCounts = birdiePool && holesPlayed >= 1
+    ? countBirdies(scores, round.players.map((p) => p.id), holesPlayedSoFar)
+    : null;
+  const birdiePoolResult = birdiePool && birdieCounts
+    ? computeBirdiePoolResult(birdieCounts, round.players.map((p) => p.id), birdiePool.amount)
     : null;
 
   if (isMatchPlay) {
@@ -75,12 +84,24 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
       });
       let sbAmt = 0;
       if (sideBetNet) {
-        const t1Net = t1.reduce((sum, id) => sum + (sideBetNet[id] ?? 0), 0);
-        const t2Net = t2.reduce((sum, id) => sum + (sideBetNet[id] ?? 0), 0);
-        sbAmt = t1Net - t2Net;
+        // Side bets are zero-sum (t1Net + t2Net = 0), so use t1Net only — t1Net - t2Net would double-count
+        sbAmt = t1.reduce((sum, id) => sum + (sideBetNet[id] ?? 0), 0);
+      }
+      if (birdiePoolResult) {
+        sbAmt += t1.reduce((sum, id) => sum + (birdiePoolResult.netPerPlayer[id] ?? 0), 0);
       }
       const net = fAmt + bAmt + tAmt + pAmt + sbAmt;
       dollarBar = { net, leader: net > 0 ? getTeamNames(t1) : net < 0 ? getTeamNames(t2) : null };
+    }
+
+    function getStatusLabel(result: number, holesPlayed: number, maxHoles: number): string {
+      if (result === 0) return 'tied';
+      const rem = maxHoles - holesPlayed;
+      if (rem <= 0) return result > 0 ? getTeamNames(t1) : getTeamNames(t2);
+      const lead = Math.abs(result);
+      if (lead > rem) return 'CLOSED';   // impossible to tie or win
+      if (lead === rem) return 'DORMIE'; // best opponent can do is tie
+      return result > 0 ? getTeamNames(t1) : getTeamNames(t2);
     }
 
     function Badge({
@@ -94,26 +115,23 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
     }) {
       if (!data) return <View style={styles.badge} />;
       const { result, holesPlayed: hp } = data;
-      const rem = maxHoles - hp;
-      const dormie = Math.abs(result) > 0 && Math.abs(result) >= rem && rem > 0;
+      const statusLabel = getStatusLabel(result, hp, maxHoles);
+      const isDormieOrClosed = statusLabel === 'DORMIE' || statusLabel === 'CLOSED';
       return (
         <View style={[styles.badge, { flex: 1 }]}>
           <Text style={styles.badgeLabel}>{label}</Text>
           <Text
             style={[
               styles.badgeValue,
-              result === 0 && styles.badgeTied,
-              result > 0 && styles.badgeUp,
-              result < 0 && styles.badgeDown,
+              result === 0 ? styles.badgeTied : styles.badgeUp,
             ]}
           >
-            {result === 0 ? 'AS' : result > 0 ? `${result}↑` : `${Math.abs(result)}↓`}
+            {result === 0 ? 'AS' : `${Math.abs(result)}↑`}
           </Text>
-          {dormie && <Text style={styles.dormie}>DORMIE</Text>}
-            {!dormie && (
-            <Text style={styles.badgeSub}>
-              {result === 0 ? 'tied' : result > 0 ? getTeamNames(t1) : getTeamNames(t2)}
-            </Text>
+          {isDormieOrClosed ? (
+            <Text style={styles.dormie}>{statusLabel}</Text>
+          ) : (
+            <Text style={styles.badgeSub}>{statusLabel}</Text>
           )}
         </View>
       );
@@ -151,11 +169,13 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
           <View style={styles.pressesSection}>
             {activePresses.map((p, i) => {
               const pr = teamMatchResult(scores, hcps, t1, t2, p.startHole, Math.min(firstHole + holesPlayed, p.endHole), holes);
+              const pressMaxHoles = p.endHole - p.startHole + 1;
+              const pressStatus = getStatusLabel(pr.result, pr.holesPlayed, pressMaxHoles);
               return (
                 <View key={i} style={styles.pressRow}>
                   <Text style={styles.pressLabel}>🔁 Press H{p.startHole}–{p.endHole} (${p.stake})</Text>
                   <Text style={[styles.pressResult, pr.result === 0 ? styles.dollarEven : styles.dollarUp]}>
-                    {pr.result === 0 ? 'AS' : pr.result > 0 ? `${getTeamNames(t1)} +${pr.result}` : `${getTeamNames(t2)} +${Math.abs(pr.result)}`}
+                    {pr.result === 0 ? 'AS' : `${Math.abs(pr.result)}↑ ${pressStatus}`}
                   </Text>
                 </View>
               );

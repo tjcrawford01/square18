@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Alert, Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,17 +11,19 @@ import { computeMatchSettlement } from '../src/engine/matchPlay';
 import { computeSkins } from '../src/engine/skins';
 import { computeFiveThreeOne, fiveThreeOneSettlement } from '../src/engine/fiveThreeOne';
 import { calculateWolf } from '../src/engine/wolf';
-import { countBirdies } from '../src/engine/birdies';
+import { countBirdies, computeBirdiePoolResult } from '../src/engine/birdies';
 import { computeSideBetNet } from '../src/engine/sideBets';
 import { getBiggestMoment, getBiggestChoke, getMomentumSwing } from '../src/engine/highlights';
-import { buildSettlementText, buildScorecardShareText, minTransactions, venmoDeepLink, venmoLink } from '../src/engine/settlement';
+import { buildSettlementText, minTransactions, venmoDeepLink, venmoLink } from '../src/engine/settlement';
 import { Card } from '../src/components/Card';
 import { SectionLabel } from '../src/components/SectionLabel';
+import { ScorecardModal } from '../src/components/ScorecardModal';
 import { Colors } from '../src/theme/colors';
 
 export default function SettlementScreen() {
   const router = useRouter();
   const { round, sideBetWinners, setSideBetWinner, resetRound } = useRoundStore();
+  const [scorecardVisible, setScorecardVisible] = useState(false);
   const selectedCourse = useCourseStore((s) => s.selectedCourse);
 
   const tee = getTeeOrDefault(selectedCourse, round.tee);
@@ -89,20 +91,30 @@ export default function SettlementScreen() {
 
   const birdiePool = round.sideBets.find((sb) => sb.type === 'birdie');
   const birdieCounts = birdiePool ? countBirdies(round.scores, round.players.map((p) => p.id), holes) : null;
+  const birdiePoolResult = birdiePool && birdieCounts
+    ? computeBirdiePoolResult(birdieCounts, round.players.map((p) => p.id), birdiePool.amount)
+    : null;
 
+  const nonBirdieSideBets = round.sideBets.filter((sb) => sb.type !== 'birdie');
   const sbNet = computeSideBetNet(
-    round.sideBets,
+    nonBirdieSideBets,
     sideBetWinners as Record<string | number, number | undefined>,
     round.players
   );
+  if (birdiePoolResult) {
+    round.players.forEach((p) => {
+      sbNet[p.id] = (sbNet[p.id] ?? 0) + (birdiePoolResult.netPerPlayer[p.id] ?? 0);
+    });
+  }
 
   const scorekeeperId = round.players[0]?.id;
   const matchContrib: Record<number, number> = {};
   round.players.forEach((p) => {
     if (isMatchPlay && settlement) {
       const onT1 = t1.includes(p.id);
+      const teamSize = onT1 ? t1.length : t2.length;
       matchContrib[p.id] =
-        (onT1 ? Math.sign(settlement.net) : -Math.sign(settlement.net)) * Math.abs(settlement.net) / 2;
+        (onT1 ? Math.sign(settlement.net) : -Math.sign(settlement.net)) * Math.abs(settlement.net) / Math.max(1, teamSize);
     } else {
       matchContrib[p.id] = 0;
     }
@@ -158,6 +170,7 @@ export default function SettlementScreen() {
       matchContrib,
       sbNet,
       birdieCounts: birdieCounts ?? undefined,
+      birdiePoolResult: birdiePoolResult ?? undefined,
       five31Results: is531 ? five31Results : undefined,
       wolfNet: isWolf ? wolfNet ?? undefined : undefined,
       highlights,
@@ -189,17 +202,6 @@ export default function SettlementScreen() {
         [{ text: 'OK' }]
       );
     }
-  };
-  const shareScorecard = () => {
-    const message = buildScorecardShareText({
-      round: { tee: round.tee, gameStyle: round.gameStyle },
-      courseName: selectedCourse?.name ?? 'Course',
-      players: round.players,
-      scores: round.scores,
-      hcps,
-      holes,
-    });
-    Share.share({ message, title: 'Scorecard' });
   };
 
   const totalPot = Math.round(
@@ -239,8 +241,8 @@ export default function SettlementScreen() {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <Pressable style={styles.shareScorecardBtn} onPress={shareScorecard}>
-          <Text style={styles.shareScorecardBtnText}>Share Scorecard</Text>
+        <Pressable style={styles.shareScorecardBtn} onPress={() => setScorecardVisible(true)}>
+          <Text style={styles.shareScorecardBtnText}>View Scorecard</Text>
         </Pressable>
         {isWolf && wolfNet && (
           <>
@@ -254,7 +256,7 @@ export default function SettlementScreen() {
                     <View style={styles.skinLeft}>
                       <Text style={[styles.skinName, (wolfNet[p.id] ?? 0) > 0 && styles.skinNameBold]}>{p.name}</Text>
                     </View>
-                    <Text style={[styles.skinAmt, (wolfNet[p.id] ?? 0) > 0 && styles.skinAmtGreen, (wolfNet[p.id] ?? 0) < 0 && styles.resultLose]}>
+                    <Text style={[styles.skinAmt, (wolfNet[p.id] ?? 0) > 0 && styles.skinAmtGreen, (wolfNet[p.id] ?? 0) < 0 && styles.settleNetLose]}>
                       {(wolfNet[p.id] ?? 0) >= 0 ? '+' : ''}{Math.round(wolfNet[p.id] ?? 0)}
                     </Text>
                   </View>
@@ -305,7 +307,7 @@ export default function SettlementScreen() {
               ).map(([label, result, amt]) => (
                 <View key={String(label)} style={styles.resultRow}>
                   <Text style={styles.resultLabel}>{label}</Text>
-                  <Text style={[styles.resultMid, result === 0 && styles.resultTied, result > 0 && styles.resultWin, result < 0 && styles.resultLose]}>
+                  <Text style={[styles.resultMid, result === 0 && styles.resultTied, (result > 0 || result < 0) && styles.resultWin]}>
                     {result === 0 ? 'Tied' : result > 0 ? `${getNames(t1)} wins` : `${getNames(t2)} wins`}
                   </Text>
                   <Text style={[styles.resultAmt, result === 0 && styles.resultTied]}>{result === 0 ? '$0' : `$${Math.abs(amt)}`}</Text>
@@ -314,26 +316,59 @@ export default function SettlementScreen() {
               {settlement.pressDetails.map((p, i) => (
                 <View key={i} style={styles.resultRow}>
                   <Text style={styles.resultLabel}>🔁 Press H{p.startHole}</Text>
-                  <Text style={[styles.resultMid, p.result === 0 && styles.resultTied, p.result > 0 && styles.resultWin, p.result < 0 && styles.resultLose]}>
+                  <Text style={[styles.resultMid, p.result === 0 && styles.resultTied, (p.result > 0 || p.result < 0) && styles.resultWin]}>
                     {p.result === 0 ? 'Tied' : p.result > 0 ? `${getNames(t1)} wins` : `${getNames(t2)} wins`}
                   </Text>
                   <Text style={[styles.resultAmt, p.result === 0 && styles.resultTied]}>{p.result === 0 ? '$0' : `$${Math.abs(p.amt)}`}</Text>
                 </View>
               ))}
-              <View style={styles.netRow}>
-                <Text style={styles.netLabel}>
-                  {settlement.net === 0 ? 'All Square' : settlement.net > 0 ? `${getNames(t1)} wins` : `${getNames(t2)} wins`}
-                </Text>
-                <Text style={styles.netAmt}>${Math.abs(settlement.net)}</Text>
-              </View>
-              {round.players.map((p) => (
-                <View key={p.id} style={styles.settleNetRow}>
-                  <Text style={styles.settleNetName}>{p.id === scorekeeperId ? 'You' : p.name}</Text>
-                  <Text style={[styles.settleNetAmt, (netPerPlayer[p.id] ?? 0) > 0 && styles.skinAmtGreen, (netPerPlayer[p.id] ?? 0) < 0 && styles.resultLose]}>
-                    {(netPerPlayer[p.id] ?? 0) >= 0 ? '+' : ''}{netPerPlayer[p.id] ?? 0}
+              {round.sideBets
+                .filter((sb) => sb.type !== 'birdie' && sideBetWinners[sb.id] != null)
+                .map((sb) => {
+                  const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
+                  const winnerId = sideBetWinners[sb.id];
+                  const winner = winnerId ? round.players.find((p) => p.id === winnerId) : null;
+                  const amt = sb.amount * (round.players.length - 1);
+                  return (
+                    <View key={sb.id} style={styles.resultRow}>
+                      <Text style={styles.resultLabel}>
+                        🏅 {type?.label}{sb.hole != null ? ` H${sb.hole}` : ''}
+                      </Text>
+                      <Text style={[styles.resultMid, styles.resultWin]}>
+                        {winner?.name ?? '?'} wins
+                      </Text>
+                      <Text style={styles.resultAmt}>${amt}</Text>
+                    </View>
+                  );
+                })}
+              {birdiePool && birdiePoolResult && (
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultLabel}>🏅 Birdie Pool</Text>
+                  <Text style={[styles.resultMid, birdiePoolResult.winnerIds.length > 0 && styles.resultWin]}>
+                    {birdiePoolResult.winnerIds.length === 0
+                      ? 'No birdies 🕳️'
+                      : birdiePoolResult.winnerIds.length === 1
+                        ? `${round.players.find((p) => p.id === birdiePoolResult.winnerIds[0])?.name ?? '?'} wins`
+                        : `${birdiePoolResult.winnerIds.map((id) => round.players.find((p) => p.id === id)?.name ?? '?').join(' and ')} split`}
+                  </Text>
+                  <Text style={styles.resultAmt}>
+                    {birdiePoolResult.winnerIds.length === 0 ? '$0' : `$${birdiePool.amount * (round.players.length - birdiePoolResult.winnerIds.length)}`}
                   </Text>
                 </View>
-              ))}
+              )}
+              {(() => {
+                const t1Net = t1.reduce((s, id) => s + (netPerPlayer[id] ?? 0), 0);
+                const combinedNet = t1Net;
+                const totalAmt = Math.round(Math.abs(combinedNet));
+                return (
+                  <View style={styles.netRow}>
+                    <Text style={styles.netLabel}>
+                      {combinedNet === 0 ? 'All Square' : combinedNet > 0 ? `${getNames(t1)} wins` : `${getNames(t2)} wins`}
+                    </Text>
+                    <Text style={styles.netAmt}>${totalAmt}</Text>
+                  </View>
+                );
+              })()}
             </Card>
 
           </>
@@ -375,6 +410,44 @@ export default function SettlementScreen() {
                   </View>
                 );
               })}
+            </Card>
+          </>
+        )}
+
+        {!isMatchPlay && round.sideBets.length > 0 && (
+          <>
+            <SectionLabel>Side Bets</SectionLabel>
+            <Card accent={Colors.forest} style={styles.card}>
+              {round.sideBets
+                .filter((sb) => sb.type !== 'birdie' && sideBetWinners[sb.id] != null)
+                .map((sb) => {
+                  const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
+                  const winnerId = sideBetWinners[sb.id];
+                  const winner = winnerId ? round.players.find((p) => p.id === winnerId) : null;
+                  const amt = sb.amount * (round.players.length - 1);
+                  return (
+                    <View key={sb.id} style={styles.resultRow}>
+                      <Text style={styles.resultLabel}>🏅 {type?.label}{sb.hole != null ? ` H${sb.hole}` : ''}</Text>
+                      <Text style={[styles.resultMid, styles.resultWin]}>{winner?.name ?? '?'} wins</Text>
+                      <Text style={styles.resultAmt}>${amt}</Text>
+                    </View>
+                  );
+                })}
+              {birdiePool && birdiePoolResult && (
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultLabel}>🏅 Birdie Pool</Text>
+                  <Text style={[styles.resultMid, birdiePoolResult.winnerIds.length > 0 && styles.resultWin]}>
+                    {birdiePoolResult.winnerIds.length === 0
+                      ? 'No birdies 🕳️'
+                      : birdiePoolResult.winnerIds.length === 1
+                        ? `${round.players.find((p) => p.id === birdiePoolResult.winnerIds[0])?.name ?? '?'} wins`
+                        : `${birdiePoolResult.winnerIds.map((id) => round.players.find((p) => p.id === id)?.name ?? '?').join(' and ')} split`}
+                  </Text>
+                  <Text style={styles.resultAmt}>
+                    {birdiePoolResult.winnerIds.length === 0 ? '$0' : `$${birdiePool.amount * (round.players.length - birdiePoolResult.winnerIds.length)}`}
+                  </Text>
+                </View>
+              )}
             </Card>
           </>
         )}
@@ -451,7 +524,7 @@ export default function SettlementScreen() {
                       {owesYou ? `${other.name} owes you $${t.amount}` : `You owe ${other.name} $${t.amount}`}
                     </Text>
                     <Pressable
-                      style={styles.venmoBtn}
+                      style={[styles.venmoBtn, styles.venmoBtnSpaced]}
                       onPress={() =>
                         openVenmo(
                           venmoDeepLink(other.venmo, t.amount, note, owesYou ? 'request' : 'pay')
@@ -483,6 +556,17 @@ export default function SettlementScreen() {
           <Text style={styles.newRoundBtnText}>Start New Round</Text>
         </Pressable>
       </ScrollView>
+      <ScorecardModal
+        visible={scorecardVisible}
+        onClose={() => setScorecardVisible(false)}
+        round={{ tee: round.tee, gameStyle: round.gameStyle, numHoles: round.numHoles }}
+        courseName={selectedCourse?.name ?? 'Course'}
+        players={round.players}
+        scores={round.scores}
+        hcps={hcps}
+        holes={holes}
+        wolfDecisions={round.gameStyle === 'wolf' ? round.wolfDecisions : undefined}
+      />
     </View>
   );
 }
@@ -528,13 +612,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   card: { marginBottom: 16 },
-  resultRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  resultLabel: { color: Colors.gray, fontSize: 13, minWidth: 60 },
-  resultMid: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '700' },
+  resultRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  resultLabel: { flex: 2, color: Colors.gray, fontSize: 13 },
+  resultMid: { flex: 3, textAlign: 'center', fontSize: 12, fontWeight: '700' },
   resultTied: { color: Colors.gray },
   resultWin: { color: Colors.fairway },
-  resultLose: { color: Colors.red },
-  resultAmt: { fontSize: 14, fontWeight: '700', color: Colors.gold, minWidth: 36, textAlign: 'right' },
+  settleNetLose: { color: Colors.gray },
+  resultAmt: { flex: 1, fontSize: 14, fontWeight: '700', color: Colors.gold, textAlign: 'right' },
   netRow: { borderTopWidth: 2, borderTopColor: Colors.grayLight, marginTop: 4, paddingTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   netLabel: { fontWeight: '700', fontSize: 15 },
   netAmt: { color: Colors.gold, fontWeight: '700', fontSize: 22 },
@@ -560,6 +644,7 @@ const styles = StyleSheet.create({
   otherDebtText: { fontSize: 14, color: Colors.ink, marginBottom: 4 },
   venmoRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   venmoBtn: { flex: 1, minWidth: 80, backgroundColor: Colors.blue, borderRadius: 8, padding: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: '#0f2a5a' },
+  venmoBtnSpaced: { marginTop: 16 },
   venmoBtnText: { color: Colors.cream, fontSize: 13, fontWeight: '700' },
   venmoBtnAmt: { color: Colors.cream, fontSize: 11 },
   venmoBtnFull: { backgroundColor: Colors.blue, borderRadius: 8, padding: 8, paddingHorizontal: 12, marginBottom: 4, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: '#0f2a5a' },

@@ -62,11 +62,17 @@ export interface HighlightLike {
   emoji: string;
 }
 
+export interface BirdiePoolResultLike {
+  winnerIds: number[];
+  birdieCount: number;
+}
+
 export interface SettlementTextOptions {
   netPerPlayer: Record<number, number>;
   matchContrib?: Record<number, number>;
   sbNet?: Record<number, number>;
   birdieCounts?: Record<number, number>;
+  birdiePoolResult?: BirdiePoolResultLike | null;
   five31Results?: Five31ResultLike[];
   wolfNet?: Record<number, number>;
   highlights?: (HighlightLike | null)[];
@@ -168,21 +174,55 @@ export function buildSettlementText(
       settlement.front.result > 0 ? t1 : settlement.front.result < 0 ? t2 : 'Tied';
     const backWinner =
       settlement.back.result > 0 ? t1 : settlement.back.result < 0 ? t2 : 'Tied';
-    const totalWinner =
+    const overallWinner =
       settlement.total.result > 0 ? t1 : settlement.total.result < 0 ? t2 : 'Tied';
     lines.push(
-      `Front 9:  ${frontWinner}${frontWinner === 'Tied' ? '      ' : ' wins  '}`,
+      `Front 9:  ${frontWinner}${frontWinner === 'Tied' ? ' Tied' : ` wins $${Math.abs(settlement.fAmt)}`}`,
     );
     lines.push(
-      `Back 9:   ${backWinner === 'Tied' ? 'Tied      ' : backWinner + ' wins'}`,
+      `Back 9:   ${backWinner === 'Tied' ? 'Tied' : backWinner + ` wins $${Math.abs(settlement.bAmt)}`}`,
     );
     lines.push(
-      `Overall:  ${totalWinner === 'Tied' ? 'Tied      ' : totalWinner + ' wins'}`,
+      `Overall:  ${overallWinner === 'Tied' ? 'Tied' : overallWinner + ` wins $${Math.abs(settlement.tAmt)}`}`,
     );
     settlement.pressDetails.forEach((p) => {
       const winner = p.result > 0 ? t1 : p.result < 0 ? t2 : 'Tied';
-      lines.push(`🔁 Press H${p.startHole}-${p.endHole ?? p.startHole}: ${winner} wins`);
+      lines.push(`🔁 Press H${p.startHole}-${p.endHole ?? p.startHole}: ${winner}${p.result === 0 ? ' Tied' : ` wins $${Math.abs(p.amt)}`}`);
     });
+    round.sideBets
+      .filter((sb) => sb.type !== 'birdie' && sideBetWinners[sb.id] != null)
+      .forEach((sb) => {
+        const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
+        const winnerId = sideBetWinners[sb.id];
+        const winner = winnerId ? round.players.find((x) => x.id === winnerId) : null;
+        const label = type?.label ?? sb.type;
+        const holeSuffix = sb.hole != null ? ` H${sb.hole}` : '';
+        const amt = sb.amount * (round.players.length - 1);
+        lines.push(`🏅 ${label}${holeSuffix}: ${winner?.name ?? '?'} wins $${amt}`);
+      });
+    const bpResult = options.birdiePoolResult;
+    const bp = round.sideBets.find((sb) => sb.type === 'birdie');
+    if (bp && bpResult) {
+      if (bpResult.winnerIds.length === 0) {
+        lines.push('🏅 Birdie Pool: no birdies 🕳️');
+      } else if (bpResult.winnerIds.length === 1) {
+        const winner = round.players.find((x) => x.id === bpResult!.winnerIds[0]);
+        const amt = bp.amount * (round.players.length - 1);
+        lines.push(`🏅 Birdie Pool: ${winner?.name ?? '?'} wins $${amt}`);
+      } else {
+        const numLosers = round.players.length - bpResult.winnerIds.length;
+        const perWinner = Math.round((bp.amount * numLosers) / bpResult.winnerIds.length);
+        const names = bpResult.winnerIds.map((id) => round.players.find((x) => x.id === id)?.name ?? '?').join(' and ');
+        lines.push(`🏅 Birdie Pool: ${names} split $${perWinner} each`);
+      }
+    }
+    const t1Ids = round.teams[0].playerIds;
+    const t2Ids = round.teams[1].playerIds;
+    const t1Net = t1Ids.reduce((s, id) => s + (netPerPlayer[id] ?? 0), 0);
+    const totalAmt = Math.round(Math.abs(t1Net));
+    const totalWinner = t1Net > 0 ? t1 : t1Net < 0 ? t2 : 'All Square';
+    lines.push('');
+    lines.push(t1Net !== 0 ? `${totalWinner} wins $${totalAmt}` : 'All Square');
   }
 
   if (round.gameStyle === 'wolf' && Object.keys(wolfNet).length > 0) {
@@ -211,25 +251,8 @@ export function buildSettlementText(
       });
   }
 
-  const birdiePool = round.sideBets.find((sb) => sb.type === 'birdie');
-  if (birdiePool && !sideBetWinners[birdiePool.id]) {
-    lines.push('');
-    lines.push('Birdie Pool — no birdies this round 🕳️');
-  }
-
-  lines.push('');
-  lines.push('MATCH RESULTS');
-  round.players
-    .slice()
-    .sort((a, b) => (netPerPlayer[b.id] ?? 0) - (netPerPlayer[a.id] ?? 0))
-    .forEach((p) => {
-      const net = Math.round(netPerPlayer[p.id] ?? 0);
-      const name = p.id === scorekeeperId ? 'You' : p.name;
-      lines.push(`${name}      ${net >= 0 ? '+' : ''}$${net}`);
-    });
   lines.push('');
   lines.push('SETTLE UP');
-  lines.push('');
   const transactions = minTransactions(netPerPlayer);
   if (round.players.length === 2) {
     if (transactions.length === 0) {
@@ -271,13 +294,19 @@ export function buildSettlementText(
     }
   }
 
+  const highlightEmoji: Record<string, string> = {
+    'Biggest Moment': '📣',
+    'Biggest Choke': '💀',
+    'Momentum Swing': '⚡',
+  };
   const highlights = options.highlights ?? [];
   const displayHighlights = highlights.filter((h): h is HighlightLike => h != null);
   if (displayHighlights.length > 0) {
     lines.push('');
     lines.push('HIGHLIGHTS');
     displayHighlights.forEach((h) => {
-      lines.push(`${h.emoji} ${h.detail}`);
+      const emoji = highlightEmoji[h.label] ?? h.emoji;
+      lines.push(`${emoji} ${h.label}: ${h.detail}`);
     });
   }
 
