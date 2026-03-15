@@ -93,6 +93,7 @@ export interface SettlementTransaction {
  * Returns transactions as "[fromId] owes [toId] $amount".
  */
 export function minTransactions(netPerPlayer: Record<number, number>): SettlementTransaction[] {
+  console.log('[minTransactions] netPerPlayer:', JSON.stringify(netPerPlayer));
   const ids = Object.keys(netPerPlayer).map(Number);
   const balances = new Map<number, number>();
   ids.forEach((id) => balances.set(id, Math.round(netPerPlayer[id] ?? 0)));

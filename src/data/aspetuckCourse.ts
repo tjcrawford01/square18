@@ -4,9 +4,9 @@
  */
 import type { Course, Hole, Tee } from '../types/course';
 
-// Pars (men): 4,4,4,5,3,5,4,4,3,4,5,3,4,4,4,4,3,4 (par 71, front 36, back 35)
+// Pars (men): 4,4,4,5,3,5,4,3,4,4,5,3,4,4,4,4,3,4 (par 71, front 36, back 35)
 // Stroke indexes (men): 11,9,13,7,17,1,3,15,5,6,10,18,12,14,4,2,16,8
-const MENS_PAR = [4, 4, 4, 5, 3, 5, 4, 4, 3, 4, 5, 3, 4, 4, 4, 4, 3, 4] as const;
+const MENS_PAR = [4, 4, 4, 5, 3, 5, 4, 3, 4, 4, 5, 3, 4, 4, 4, 4, 3, 4] as const;
 const MENS_SI = [11, 9, 13, 7, 17, 1, 3, 15, 5, 6, 10, 18, 12, 14, 4, 2, 16, 8] as const;
 
 function buildHoles(yards: readonly number[]): Hole[] {

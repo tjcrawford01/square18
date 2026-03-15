@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Alert, Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -56,14 +56,18 @@ export default function SettlementScreen() {
     ? computeMatchSettlement(round.scores, hcps, t1, t2, round.stakes, round.autoPress, round.pressAt, allHoles, numHoles)
     : null;
 
-  const skinResults = !isMatchPlay && !is531 && !isWolf ? computeSkins(round.scores, hcps, round.players.map((p) => p.id), holes) : [];
-  const skinsWon: Record<number, number> = {};
-  round.players.forEach((p) => (skinsWon[p.id] = 0));
-  skinResults.forEach((r) => {
-    if (r.winner != null) skinsWon[r.winner] = (skinsWon[r.winner] ?? 0) + (r.skinsWon ?? 0);
-  });
-  const perSkin = round.skinValue * Math.max(0, round.players.length - 1);
-  const skinsSettlement = !isMatchPlay && !is531 && !isWolf ? { skinResults, skinsWon, perSkin } : null;
+  const skinsSettlement = useMemo(() => {
+    if (isMatchPlay || is531 || isWolf) return null;
+    const skinResults = computeSkins(round.scores, hcps, round.players.map((p) => p.id), holes);
+    const skinsWon: Record<number, number> = {};
+    round.players.forEach((p) => (skinsWon[p.id] = 0));
+    skinResults.forEach((r) => {
+      if (r.winner != null) skinsWon[r.winner] = (skinsWon[r.winner] ?? 0) + (r.skinsWon ?? 0);
+    });
+    const perSkin = round.skinValue * Math.max(0, round.players.length - 1);
+    const skinsNet = computeSkinsNet(skinsWon, round.players.map((p) => p.id), round.skinValue);
+    return { skinResults, skinsWon, perSkin, skinsNet };
+  }, [isMatchPlay, is531, isWolf, round.scores, round.players, round.skinValue, hcps, holes]);
 
   const five31Results = is531 && round.players.length === 3
     ? computeFiveThreeOne(round.scores, hcps, round.players.map((p) => p.id), holes)
@@ -141,13 +145,8 @@ export default function SettlementScreen() {
       netPerPlayer[p.id] = Math.round((wolfNet[p.id] ?? 0) + (sbNet[p.id] ?? 0));
     });
   } else if (skinsSettlement) {
-    const skinsNet = computeSkinsNet(
-      skinsSettlement.skinsWon,
-      round.players.map((p) => p.id),
-      round.skinValue,
-    );
     round.players.forEach((p) => {
-      netPerPlayer[p.id] = Math.round((skinsNet[p.id] ?? 0) + (sbNet[p.id] ?? 0));
+      netPerPlayer[p.id] = Math.round((skinsSettlement.skinsNet[p.id] ?? 0) + (sbNet[p.id] ?? 0));
     });
   } else {
     round.players.forEach((p) => {
@@ -411,22 +410,34 @@ export default function SettlementScreen() {
             <SectionLabel>Skins Leaderboard</SectionLabel>
             <Card accent={Colors.gold} style={styles.card}>
               {(() => {
+                const { skinsWon, skinsNet } = skinsSettlement;
                 const maxSkins = Math.max(...round.players.map((p) => skinsWon[p.id]), 0);
                 return round.players
                   .slice()
-                  .sort((a, b) => skinsWon[b.id] - skinsWon[a.id])
-                  .map((p, i) => (
-                    <View key={p.id} style={styles.skinRow}>
-                      <View style={styles.skinLeft}>
-                        {skinsWon[p.id] === maxSkins && maxSkins > 0 && <Text>🏆</Text>}
-                        <Text style={[styles.skinName, i === 0 && styles.skinNameBold]}>{p.name}</Text>
-                    </View>
-                    <View style={styles.skinRight}>
-                      <Text style={styles.skinCount}>{skinsWon[p.id]} skin{skinsWon[p.id] !== 1 ? 's' : ''}</Text>
-                      <Text style={[styles.skinAmt, skinsWon[p.id] > 0 && styles.skinAmtGreen]}>${skinsWon[p.id] * perSkin}</Text>
-                    </View>
-                  </View>
-                ));
+                  .sort((a, b) => (skinsNet[b.id] ?? 0) - (skinsNet[a.id] ?? 0))
+                  .map((p, i) => {
+                    const net = Math.round(skinsNet[p.id] ?? 0);
+                    const isPositive = net > 0;
+                    const isNegative = net < 0;
+                    return (
+                      <View key={p.id} style={styles.skinRow}>
+                        <View style={styles.skinLeft}>
+                          {skinsWon[p.id] === maxSkins && maxSkins > 0 && <Text>🏆</Text>}
+                          <Text style={[styles.skinName, i === 0 && styles.skinNameBold]}>{p.name}</Text>
+                        </View>
+                        <View style={styles.skinRight}>
+                          <Text style={styles.skinCount}>{skinsWon[p.id]} skin{skinsWon[p.id] !== 1 ? 's' : ''}</Text>
+                          <Text style={[
+                            styles.skinAmt,
+                            isPositive && styles.skinAmtGreen,
+                            isNegative && styles.skinAmtRed,
+                          ]}>
+                            {`${isPositive ? '+' : isNegative ? '-' : ''}$${Math.abs(net)}`}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  });
               })()}
             </Card>
 
@@ -441,7 +452,7 @@ export default function SettlementScreen() {
                     <Text style={styles.holeMid}>
                       {winner ? `${winner.name}${(r.skinsWon ?? 0) > 1 ? ` (${r.skinsWon})` : ''}` : r.tied ? 'Tied —' : '—'}
                     </Text>
-                    <Text style={[styles.holeAmt, winner && styles.skinAmtGreen]}>{winner ? `$${(r.skinsWon ?? 0) * perSkin}` : 'carry'}</Text>
+                    <Text style={[styles.holeAmt, winner && styles.skinAmtGreen]}>{winner ? `$${(r.skinsWon ?? 0) * skinsSettlement.perSkin}` : 'carry'}</Text>
                   </View>
                 );
               })}
@@ -691,6 +702,7 @@ const styles = StyleSheet.create({
   skinCount: { color: Colors.gray, fontSize: 12 },
   skinAmt: { fontSize: 18, fontWeight: '700', color: Colors.gray },
   skinAmtGreen: { color: Colors.forest },
+  skinAmtRed: { color: Colors.red },
   five31Pts: { fontSize: 18, fontWeight: '700', color: Colors.forest },
   holeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 6, marginBottom: 6, borderBottomWidth: 1, borderBottomColor: Colors.grayLight },
   holeLabel: { color: Colors.gray, fontSize: 12, minWidth: 56 },
