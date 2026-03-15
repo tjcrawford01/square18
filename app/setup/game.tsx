@@ -84,8 +84,7 @@ export default function GameScreen() {
               onPress={() => {
                 if (g.disabled) return;
                 const updates: Partial<typeof round> = { gameStyle: g.id as 'matchplay' | 'skins' | 'fivethreeone' | 'wolf' };
-                if (g.id === 'fivethreeone' && (round.five31Mode == null || round.five31Value == null)) {
-                  updates.five31Mode = round.five31Mode ?? 'perPoint';
+                if (g.id === 'fivethreeone' && round.five31Value == null) {
                   updates.five31Value = round.five31Value ?? 1;
                 }
                 if (g.id === 'wolf' && round.wolfValue == null) {
@@ -230,22 +229,6 @@ export default function GameScreen() {
         {is531 && (
           <>
             <SectionLabel>5-3-1 Stakes</SectionLabel>
-            <View style={styles.five31OptionRow}>
-              <Pressable
-                style={[styles.five31Option, round.five31Mode === 'perPoint' && styles.five31OptionActive]}
-                onPress={() => setRound({ five31Mode: 'perPoint' })}
-              >
-                <Text style={[styles.five31OptionLabel, round.five31Mode === 'perPoint' && styles.five31OptionLabelActive]}>Per Point</Text>
-                <Text style={[styles.five31OptionDesc, round.five31Mode === 'perPoint' && styles.five31OptionDescActive]}>$ per point</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.five31Option, round.five31Mode === 'fixedPot' && styles.five31OptionActive]}
-                onPress={() => setRound({ five31Mode: 'fixedPot' })}
-              >
-                <Text style={[styles.five31OptionLabel, round.five31Mode === 'fixedPot' && styles.five31OptionLabelActive]}>Fixed Pot</Text>
-                <Text style={[styles.five31OptionDesc, round.five31Mode === 'fixedPot' && styles.five31OptionDescActive]}>Total pot $</Text>
-              </Pressable>
-            </View>
             <View style={styles.skinValueRow}>
               <Text style={styles.dollarLarge}>$</Text>
               <TextInput
@@ -254,9 +237,7 @@ export default function GameScreen() {
                 onChangeText={(t) => setRound({ five31Value: parseInt(t, 10) || 0 })}
                 keyboardType="number-pad"
               />
-              <Text style={styles.perSkin}>
-                {round.five31Mode === 'perPoint' ? 'per point' : 'total pot'}
-              </Text>
+              <Text style={styles.perSkin}>per point</Text>
             </View>
           </>
         )}
@@ -361,25 +342,6 @@ const styles = StyleSheet.create({
   gameStyleDesc: { fontSize: 11, opacity: 0.7, marginTop: 3, color: Colors.ink },
   gameStyleDescActive: { color: Colors.cream },
   gameStyleBtnDisabled: { opacity: 0.5 },
-  five31OptionRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
-  five31Option: {
-    flex: 1,
-    padding: 14,
-    borderWidth: 2,
-    borderColor: Colors.grayLight,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  five31OptionActive: {
-    backgroundColor: Colors.forest,
-    borderColor: Colors.forest,
-    borderBottomWidth: 4,
-    borderBottomColor: Colors.gold,
-  },
-  five31OptionLabel: { fontWeight: '700', fontSize: 14, color: Colors.ink },
-  five31OptionLabelActive: { color: Colors.cream },
-  five31OptionDesc: { fontSize: 11, marginTop: 3, color: Colors.gray },
-  five31OptionDescActive: { color: Colors.cream },
   teeDropdown: {
     flexDirection: 'row',
     alignItems: 'center',

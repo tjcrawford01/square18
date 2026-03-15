@@ -92,18 +92,15 @@ export function computeFiveThreeOne(
 
 /**
  * Settlement: pairwise differentials.
- * For every pair of players, the one with fewer points pays the one with more points the difference × stake.
- * perPoint mode: stake = value per point.
- * fixedPot mode: stake = totalPot / totalPoints (converted to per-point equivalent).
+ * For every pair of players, the one with fewer points pays the one with more points: payment = diff × stake.
+ * Each point is worth exactly the stake amount (user-entered $ per point).
  */
 export function fiveThreeOneSettlement(
   results: { playerId: number; points: number }[],
-  mode: 'perPoint' | 'fixedPot',
-  value: number
+  stakePerPoint: number
 ): { playerId: number; net: number }[] {
   if (results.length !== 3) return results.map((r) => ({ playerId: r.playerId, net: 0 }));
-  const totalPoints = results.reduce((s, r) => s + r.points, 0);
-  const stake = mode === 'perPoint' ? value : totalPoints > 0 ? value / totalPoints : 0;
+  const stake = stakePerPoint;
 
   const netPerPlayer: Record<number, number> = {};
   results.forEach((r) => (netPerPlayer[r.playerId] = 0));

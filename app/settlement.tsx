@@ -73,12 +73,8 @@ export default function SettlementScreen() {
     ? computeFiveThreeOne(round.scores, hcps, round.players.map((p) => p.id), holes)
     : [];
   const five31Settlement =
-    five31Results.length === 3 && round.five31Mode != null && round.five31Value != null
-      ? fiveThreeOneSettlement(
-          five31Results,
-          round.five31Mode,
-          round.five31Value
-        )
+    five31Results.length === 3 && round.five31Value != null
+      ? fiveThreeOneSettlement(five31Results, round.five31Value)
       : [];
 
   const wolfNet =

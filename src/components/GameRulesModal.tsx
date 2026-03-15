@@ -179,9 +179,9 @@ export function GameRulesModal({ visible, onClose }: GameRulesModalProps) {
               <Text style={accordionStyles.bodyText}>• Tie for high (two players tied): first place gets 5, tied players get 2 each</Text>
               <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Three-way tie: 3 points each</Text>
               <Text style={accordionStyles.bodySubhead}>Stakes</Text>
-              <Text style={accordionStyles.bodyText}>Choose either:</Text>
-              <Text style={accordionStyles.bodyText}>• Per point: set a dollar value per point, pay out based on point totals at the end</Text>
-              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Fixed pot: set a total pot amount, divided proportionally by points won</Text>
+              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>
+                Set a dollar value per point. At the end, pairwise settlement: the player with fewer points pays the player with more points (point difference × stake).
+              </Text>
               <Text style={accordionStyles.bodySubhead}>Handicaps</Text>
               <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>
                 Net scores are used. Full handicap applied (no allowance reduction).

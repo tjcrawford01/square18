@@ -50,9 +50,7 @@ export interface RoundConfig {
   autoPress: boolean;
   pressAt: number;
   sideBets: SideBet[];
-  /** 5-3-1 only: 'perPoint' = $ per point, 'fixedPot' = total pot */
-  five31Mode?: 'perPoint' | 'fixedPot';
-  /** 5-3-1 only: dollars per point or total pot $ */
+  /** 5-3-1 only: dollars per point */
   five31Value?: number;
   /** Wolf only: stake per hole */
   wolfValue?: number;
@@ -114,7 +112,6 @@ const defaultRound: RoundConfig & { players: Player[]; teams: Team[]; scores: Sc
   autoPress: true,
   pressAt: 2,
   sideBets: [],
-  five31Mode: 'perPoint',
   five31Value: 1,
   players: DEFAULT_PLAYERS,
   teams: DEFAULT_TEAMS,
