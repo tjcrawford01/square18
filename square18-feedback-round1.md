@@ -87,7 +87,7 @@ Remove the separate black shareable image feature. Instead:
 
 **A. Add highlights to the settlement screen**
 Below the results section on the settlement screen, add a "Highlights" section showing:
-- 🦅 Biggest Moment: best gross score relative to par (eagle/birdie)
+- 🔥 Biggest Moment: best gross score relative to par (eagle/birdie)
 - 💀 Biggest Choke: worst adjusted score (gross − par − strokes received)
 - ⚡ Momentum Swing: hole where lead changed most
 
@@ -110,7 +110,7 @@ Tom pays Mike $30
 Dan pays Mike $20
 
 HIGHLIGHTS
-🦅 Mike • Eagle on 14
+🔥 Mike • Eagle on 14
 💀 Tom • +4 on 17
 ⚡ Mike took the lead on 12
 

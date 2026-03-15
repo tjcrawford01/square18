@@ -7,6 +7,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import type { Course, Hole, Tee } from '../types/course';
+import { ASPETUCK_COURSE } from '../data/aspetuckCourse';
 
 const CACHE_PREFIX = 'course:';
 const LAST_COURSE_KEY = 'lastCourseId';
@@ -96,11 +97,17 @@ function mapClubsToList(data: { clubs?: ApiClub[] }): CourseListItem[] {
 
 /**
  * Get full course detail. Uses cache: returns cached if present.
- * Pass forceRefresh: true to bypass cache (e.g. for Aspetuck to get updated ratings).
+ * Pass forceRefresh: true to bypass cache.
+ * Aspetuck: always returns hardcoded ASPETUCK_COURSE (verified from scorecard); never fetches from API.
  */
 export async function getCourseDetail(courseId: string, forceRefresh = false): Promise<Course | null> {
-  const effectiveId = courseId === 'aspetuck' ? ASPETUCK_API_ID : courseId;
-  const cacheKey = CACHE_PREFIX + effectiveId;
+  // Aspetuck: always use hardcoded data, never API or cache
+  if (courseId === 'aspetuck' || courseId === ASPETUCK_API_ID) {
+    await AsyncStorage.removeItem(CACHE_PREFIX + ASPETUCK_API_ID);
+    return ASPETUCK_COURSE;
+  }
+
+  const cacheKey = CACHE_PREFIX + courseId;
 
   if (!forceRefresh) {
     const cached = await AsyncStorage.getItem(cacheKey);
@@ -115,8 +122,9 @@ export async function getCourseDetail(courseId: string, forceRefresh = false): P
 
   const key = getApiKey();
   if (!key) return null;
+
   try {
-    const url = `${BASE}/courses/${effectiveId}`;
+    const url = `${BASE}/courses/${courseId}`;
     const res = await fetch(url, { headers: getHeaders() });
     if (!res.ok) return null;
     const data = await res.json();

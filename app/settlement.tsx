@@ -8,7 +8,7 @@ import { getTeeOrDefault, getHolesForTee } from '../src/types/course';
 import { SIDE_BET_TYPES } from '../src/data/sideBetTypes';
 import { courseHandicap, playingHandicaps } from '../src/engine/handicap';
 import { computeMatchSettlement } from '../src/engine/matchPlay';
-import { computeSkins } from '../src/engine/skins';
+import { computeSkins, computeSkinsNet } from '../src/engine/skins';
 import { computeFiveThreeOne, fiveThreeOneSettlement } from '../src/engine/fiveThreeOne';
 import { calculateWolf } from '../src/engine/wolf';
 import { countBirdies, computeBirdiePoolResult } from '../src/engine/birdies';
@@ -91,15 +91,17 @@ export default function SettlementScreen() {
 
   const birdiePool = round.sideBets.find((sb) => sb.type === 'birdie');
   const birdieCounts = birdiePool ? countBirdies(round.scores, round.players.map((p) => p.id), holes) : null;
+  const is2v2 = isMatchPlay && round.players.length === 4 && round.teams?.[0]?.playerIds?.length === 2 && round.teams?.[1]?.playerIds?.length === 2;
   const birdiePoolResult = birdiePool && birdieCounts
-    ? computeBirdiePoolResult(birdieCounts, round.players.map((p) => p.id), birdiePool.amount)
+    ? computeBirdiePoolResult(birdieCounts, round.players.map((p) => p.id), birdiePool.amount, is2v2 ? round.teams : undefined)
     : null;
 
   const nonBirdieSideBets = round.sideBets.filter((sb) => sb.type !== 'birdie');
   const sbNet = computeSideBetNet(
     nonBirdieSideBets,
     sideBetWinners as Record<string | number, number | undefined>,
-    round.players
+    round.players,
+    is2v2 ? round.teams : undefined
   );
   if (birdiePoolResult) {
     round.players.forEach((p) => {
@@ -113,8 +115,10 @@ export default function SettlementScreen() {
     if (isMatchPlay && settlement) {
       const onT1 = t1.includes(p.id);
       const teamSize = onT1 ? t1.length : t2.length;
-      matchContrib[p.id] =
-        (onT1 ? Math.sign(settlement.net) : -Math.sign(settlement.net)) * Math.abs(settlement.net) / Math.max(1, teamSize);
+      const opponentCount = onT1 ? t2.length : t1.length;
+      // settlement.net is per-person; team total = net × opponents; per player = total / teamSize
+      const sign = onT1 ? Math.sign(settlement.net) : -Math.sign(settlement.net);
+      matchContrib[p.id] = sign * Math.abs(settlement.net) * opponentCount / Math.max(1, teamSize);
     } else {
       matchContrib[p.id] = 0;
     }
@@ -137,11 +141,13 @@ export default function SettlementScreen() {
       netPerPlayer[p.id] = Math.round((wolfNet[p.id] ?? 0) + (sbNet[p.id] ?? 0));
     });
   } else if (skinsSettlement) {
-    const totalSkins = skinsSettlement.skinResults.reduce((s, r) => s + (r.skinsWon ?? 0), 0);
-    const totalPot = totalSkins * perSkin;
+    const skinsNet = computeSkinsNet(
+      skinsSettlement.skinsWon,
+      round.players.map((p) => p.id),
+      round.skinValue,
+    );
     round.players.forEach((p) => {
-      const skinsNet = skinsSettlement.skinsWon[p.id] * perSkin - totalPot / round.players.length;
-      netPerPlayer[p.id] = Math.round(skinsNet + (sbNet[p.id] ?? 0));
+      netPerPlayer[p.id] = Math.round((skinsNet[p.id] ?? 0) + (sbNet[p.id] ?? 0));
     });
   } else {
     round.players.forEach((p) => {
@@ -294,8 +300,8 @@ export default function SettlementScreen() {
           <>
             <SectionLabel>Match Results</SectionLabel>
             <Card accent={Colors.forest} style={styles.card}>
-              {(
-                numHoles === 'front9'
+              {(() => {
+                const matchRows = numHoles === 'front9'
                   ? [['Front 9', settlement.front.result, settlement.fAmt]]
                   : numHoles === 'back9'
                     ? [['Back 9', settlement.back.result, settlement.bAmt]]
@@ -303,70 +309,96 @@ export default function SettlementScreen() {
                         ['Front 9', settlement.front.result, settlement.fAmt],
                         ['Back 9', settlement.back.result, settlement.bAmt],
                         ['Overall', settlement.total.result, settlement.tAmt],
-                      ]
-              ).map(([label, result, amt]) => (
-                <View key={String(label)} style={styles.resultRow}>
-                  <Text style={styles.resultLabel}>{label}</Text>
-                  <Text style={[styles.resultMid, result === 0 && styles.resultTied, (result > 0 || result < 0) && styles.resultWin]}>
-                    {result === 0 ? 'Tied' : result > 0 ? `${getNames(t1)} wins` : `${getNames(t2)} wins`}
-                  </Text>
-                  <Text style={[styles.resultAmt, result === 0 && styles.resultTied]}>{result === 0 ? '$0' : `$${Math.abs(amt)}`}</Text>
-                </View>
-              ))}
-              {settlement.pressDetails.map((p, i) => (
-                <View key={i} style={styles.resultRow}>
-                  <Text style={styles.resultLabel}>🔁 Press H{p.startHole}</Text>
-                  <Text style={[styles.resultMid, p.result === 0 && styles.resultTied, (p.result > 0 || p.result < 0) && styles.resultWin]}>
-                    {p.result === 0 ? 'Tied' : p.result > 0 ? `${getNames(t1)} wins` : `${getNames(t2)} wins`}
-                  </Text>
-                  <Text style={[styles.resultAmt, p.result === 0 && styles.resultTied]}>{p.result === 0 ? '$0' : `$${Math.abs(p.amt)}`}</Text>
-                </View>
-              ))}
-              {round.sideBets
-                .filter((sb) => sb.type !== 'birdie' && sideBetWinners[sb.id] != null)
-                .map((sb) => {
-                  const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
-                  const winnerId = sideBetWinners[sb.id];
-                  const winner = winnerId ? round.players.find((p) => p.id === winnerId) : null;
-                  const amt = sb.amount * (round.players.length - 1);
-                  return (
-                    <View key={sb.id} style={styles.resultRow}>
-                      <Text style={styles.resultLabel}>
-                        🏅 {type?.label}{sb.hole != null ? ` H${sb.hole}` : ''}
-                      </Text>
-                      <Text style={[styles.resultMid, styles.resultWin]}>
-                        {winner?.name ?? '?'} wins
-                      </Text>
-                      <Text style={styles.resultAmt}>${amt}</Text>
-                    </View>
-                  );
-                })}
-              {birdiePool && birdiePoolResult && (
-                <View style={styles.resultRow}>
-                  <Text style={styles.resultLabel}>🏅 Birdie Pool</Text>
-                  <Text style={[styles.resultMid, birdiePoolResult.winnerIds.length > 0 && styles.resultWin]}>
-                    {birdiePoolResult.winnerIds.length === 0
-                      ? 'No birdies 🕳️'
-                      : birdiePoolResult.winnerIds.length === 1
-                        ? `${round.players.find((p) => p.id === birdiePoolResult.winnerIds[0])?.name ?? '?'} wins`
-                        : `${birdiePoolResult.winnerIds.map((id) => round.players.find((p) => p.id === id)?.name ?? '?').join(' and ')} split`}
-                  </Text>
-                  <Text style={styles.resultAmt}>
-                    {birdiePoolResult.winnerIds.length === 0 ? '$0' : `$${birdiePool.amount * (round.players.length - birdiePoolResult.winnerIds.length)}`}
-                  </Text>
-                </View>
-              )}
-              {(() => {
-                const t1Net = t1.reduce((s, id) => s + (netPerPlayer[id] ?? 0), 0);
-                const combinedNet = t1Net;
-                const totalAmt = Math.round(Math.abs(combinedNet));
+                      ];
+                let displayedTotal = 0;
                 return (
-                  <View style={styles.netRow}>
-                    <Text style={styles.netLabel}>
-                      {combinedNet === 0 ? 'All Square' : combinedNet > 0 ? `${getNames(t1)} wins` : `${getNames(t2)} wins`}
-                    </Text>
-                    <Text style={styles.netAmt}>${totalAmt}</Text>
-                  </View>
+                  <>
+                    {matchRows.map(([label, result, amt]) => {
+                      const displayAmt = result === 0 ? 0 : Math.abs(amt) * (is2v2 ? 2 : 1);
+                      displayedTotal += Math.sign(result) * displayAmt;
+                      return (
+                        <View key={String(label)} style={styles.resultRow}>
+                          <Text style={styles.resultLabel}>{label}</Text>
+                          <Text style={[styles.resultMid, result === 0 && styles.resultTied, (result > 0 || result < 0) && styles.resultWin]}>
+                            {result === 0 ? 'Tied' : result > 0 ? `${getNames(t1)} ${is2v2 ? 'win' : 'wins'}` : `${getNames(t2)} ${is2v2 ? 'win' : 'wins'}`}
+                          </Text>
+                          <Text style={[styles.resultAmt, result === 0 && styles.resultTied]}>{result === 0 ? '$0' : `$${displayAmt}`}</Text>
+                        </View>
+                      );
+                    })}
+                    {settlement.pressDetails.map((p, i) => {
+                      const pressDisplayAmt = p.result === 0 ? 0 : Math.abs(p.amt) * (is2v2 ? 2 : 1);
+                      displayedTotal += Math.sign(p.result) * pressDisplayAmt;
+                      return (
+                        <View key={i} style={styles.resultRow}>
+                          <Text style={styles.resultLabel}>🔁 Press H{p.startHole}</Text>
+                          <Text style={[styles.resultMid, p.result === 0 && styles.resultTied, (p.result > 0 || p.result < 0) && styles.resultWin]}>
+                            {p.result === 0 ? 'Tied' : p.result > 0 ? `${getNames(t1)} ${is2v2 ? 'win' : 'wins'}` : `${getNames(t2)} ${is2v2 ? 'win' : 'wins'}`}
+                          </Text>
+                          <Text style={[styles.resultAmt, p.result === 0 && styles.resultTied]}>{p.result === 0 ? '$0' : `$${pressDisplayAmt}`}</Text>
+                        </View>
+                      );
+                    })}
+                    {round.sideBets
+                      .filter((sb) => sb.type !== 'birdie' && sideBetWinners[sb.id] != null)
+                      .map((sb) => {
+                        const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
+                        const winnerId = sideBetWinners[sb.id];
+                        const winner = winnerId ? round.players.find((p) => p.id === winnerId) : null;
+                        const winnerTeam = winnerId && is2v2 ? round.teams.find((t) => t.playerIds.includes(winnerId)) : null;
+                        const sbAmt = is2v2 && winnerTeam
+                          ? sb.amount * (round.players.length - winnerTeam.playerIds.length)
+                          : sb.amount * (round.players.length - 1);
+                        const t1WonSb = winnerTeam === round.teams[0];
+                        displayedTotal += winnerTeam ? (t1WonSb ? sbAmt : -sbAmt) : 0;
+                        const winnerLabel = is2v2 && winnerTeam ? getNames(winnerTeam.playerIds) : (winner?.name ?? '?');
+                        const winVerb = is2v2 && winnerTeam ? 'win' : 'wins';
+                        return (
+                          <View key={sb.id} style={styles.resultRow}>
+                            <Text style={styles.resultLabel}>
+                              🏅 {type?.label}{sb.hole != null ? ` H${sb.hole}` : ''}
+                            </Text>
+                            <Text style={[styles.resultMid, styles.resultWin]}>
+                              {winnerLabel} {winVerb}
+                            </Text>
+                            <Text style={styles.resultAmt}>${sbAmt}</Text>
+                          </View>
+                        );
+                      })}
+                    {birdiePool && birdiePoolResult && (() => {
+                      const bpAmt = birdiePoolResult.winnerIds.length === 0 ? 0 : (is2v2 && birdiePoolResult.winnerIds.length > 0
+                        ? birdiePool.amount
+                        : birdiePool.amount * (round.players.length - birdiePoolResult.winnerIds.length));
+                      const bpWinnerTeam = is2v2 && birdiePoolResult.winnerIds.length > 0
+                        ? round.teams.find((t) => birdiePoolResult!.winnerIds.every((id) => t.playerIds.includes(id)))
+                        : null;
+                      displayedTotal += bpWinnerTeam ? (bpWinnerTeam === round.teams[0] ? bpAmt : -bpAmt) : 0;
+                      return (
+                        <View style={styles.resultRow}>
+                          <Text style={styles.resultLabel}>🏅 Birdie Pool</Text>
+                          <Text style={[styles.resultMid, birdiePoolResult.winnerIds.length > 0 && styles.resultWin]}>
+                            {birdiePoolResult.winnerIds.length === 0
+                              ? (birdiePoolResult.birdieCount === 0 ? 'No birdies 🕳️' : (is2v2 ? 'Tied' : 'No birdies 🕳️'))
+                              : (is2v2 && birdiePoolResult.winnerIds.length > 0 && (() => {
+                                  const wt = round.teams.find((t) =>
+                                    birdiePoolResult!.winnerIds.every((id) => t.playerIds.includes(id))
+                                  );
+                                  return wt ? `${getNames(wt.playerIds)} win` : null;
+                                })()) ?? (birdiePoolResult.winnerIds.length === 1
+                                ? `${round.players.find((p) => p.id === birdiePoolResult.winnerIds[0])?.name ?? '?'} wins`
+                                : `${birdiePoolResult.winnerIds.map((id) => round.players.find((p) => p.id === id)?.name ?? '?').join(' and ')} split`)}
+                          </Text>
+                          <Text style={styles.resultAmt}>${bpAmt}</Text>
+                        </View>
+                      );
+                    })()}
+                    <View style={styles.netRow}>
+                      <Text style={styles.netLabel}>
+                        {displayedTotal === 0 ? 'All Square' : displayedTotal > 0 ? `${getNames(t1)} ${is2v2 ? 'win' : 'wins'}` : `${getNames(t2)} ${is2v2 ? 'win' : 'wins'}`}
+                      </Text>
+                      <Text style={styles.netAmt}>${Math.round(Math.abs(displayedTotal))}</Text>
+                    </View>
+                  </>
                 );
               })()}
             </Card>
@@ -378,21 +410,24 @@ export default function SettlementScreen() {
           <>
             <SectionLabel>Skins Leaderboard</SectionLabel>
             <Card accent={Colors.gold} style={styles.card}>
-              {round.players
-                .slice()
-                .sort((a, b) => skinsWon[b.id] - skinsWon[a.id])
-                .map((p, i) => (
-                  <View key={p.id} style={styles.skinRow}>
-                    <View style={styles.skinLeft}>
-                      {i === 0 && skinsWon[p.id] > 0 && <Text>🏆</Text>}
-                      <Text style={[styles.skinName, i === 0 && styles.skinNameBold]}>{p.name}</Text>
+              {(() => {
+                const maxSkins = Math.max(...round.players.map((p) => skinsWon[p.id]), 0);
+                return round.players
+                  .slice()
+                  .sort((a, b) => skinsWon[b.id] - skinsWon[a.id])
+                  .map((p, i) => (
+                    <View key={p.id} style={styles.skinRow}>
+                      <View style={styles.skinLeft}>
+                        {skinsWon[p.id] === maxSkins && maxSkins > 0 && <Text>🏆</Text>}
+                        <Text style={[styles.skinName, i === 0 && styles.skinNameBold]}>{p.name}</Text>
                     </View>
                     <View style={styles.skinRight}>
                       <Text style={styles.skinCount}>{skinsWon[p.id]} skin{skinsWon[p.id] !== 1 ? 's' : ''}</Text>
                       <Text style={[styles.skinAmt, skinsWon[p.id] > 0 && styles.skinAmtGreen]}>${skinsWon[p.id] * perSkin}</Text>
                     </View>
                   </View>
-                ))}
+                ));
+              })()}
             </Card>
 
             <SectionLabel>Hole-by-Hole</SectionLabel>
@@ -404,7 +439,7 @@ export default function SettlementScreen() {
                   <View key={r.hole} style={styles.holeRow}>
                     <Text style={styles.holeLabel}>Hole {r.hole}</Text>
                     <Text style={styles.holeMid}>
-                      {winner ? `${winner.name}${(r.skinsWon ?? 0) > 1 ? ` (${r.skinsWon}🏌️)` : ''}` : r.tied ? 'Tied —' : '—'}
+                      {winner ? `${winner.name}${(r.skinsWon ?? 0) > 1 ? ` (${r.skinsWon})` : ''}` : r.tied ? 'Tied —' : '—'}
                     </Text>
                     <Text style={[styles.holeAmt, winner && styles.skinAmtGreen]}>{winner ? `$${(r.skinsWon ?? 0) * perSkin}` : 'carry'}</Text>
                   </View>

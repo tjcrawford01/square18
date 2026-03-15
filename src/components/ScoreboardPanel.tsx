@@ -41,15 +41,17 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
   const isMatchPlay = round.gameStyle === 'matchplay';
   const holesPlayed = currentHole - firstHole;
   const holesPlayedSoFar = holes.filter((h) => h.hole >= firstHole && h.hole <= currentHole);
+  const is2v2 = round.gameStyle === 'matchplay' && round.players.length === 4 &&
+    round.teams?.[0]?.playerIds?.length === 2 && round.teams?.[1]?.playerIds?.length === 2;
   const sideBetNet = round.sideBets?.length
-    ? computeSideBetNet(round.sideBets, sideBetWinners, round.players)
+    ? computeSideBetNet(round.sideBets, sideBetWinners, round.players, is2v2 ? round.teams : undefined)
     : null;
   const birdiePool = round.sideBets?.find((sb) => sb.type === 'birdie');
   const birdieCounts = birdiePool && holesPlayed >= 1
     ? countBirdies(scores, round.players.map((p) => p.id), holesPlayedSoFar)
     : null;
   const birdiePoolResult = birdiePool && birdieCounts
-    ? computeBirdiePoolResult(birdieCounts, round.players.map((p) => p.id), birdiePool.amount)
+    ? computeBirdiePoolResult(birdieCounts, round.players.map((p) => p.id), birdiePool.amount, is2v2 ? round.teams : undefined)
     : null;
 
   if (isMatchPlay) {
@@ -74,13 +76,14 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
 
     let dollarBar: { net: number; leader: string | null } | null = null;
     if (total) {
-      const fAmt = front ? Math.sign(front.result) * round.stakes.front : 0;
-      const bAmt = back ? Math.sign(back.result) * round.stakes.back : 0;
-      const tAmt = total ? Math.sign(total.result) * round.stakes.total : 0;
+      const oppMult = (r: number) => (is2v2 ? (r > 0 ? t2.length : r < 0 ? t1.length : 1) : 1);
+      const fAmt = front ? Math.sign(front.result) * round.stakes.front * oppMult(front.result) : 0;
+      const bAmt = back ? Math.sign(back.result) * round.stakes.back * oppMult(back.result) : 0;
+      const tAmt = total ? Math.sign(total.result) * round.stakes.total * oppMult(total.result) : 0;
       let pAmt = 0;
       activePresses.forEach((p) => {
         const pr = teamMatchResult(scores, hcps, t1, t2, p.startHole, Math.min(firstHole + holesPlayed, p.endHole), holes);
-        pAmt += Math.sign(pr.result) * p.stake;
+        pAmt += Math.sign(pr.result) * p.stake * oppMult(pr.result);
       });
       let sbAmt = 0;
       if (sideBetNet) {
@@ -148,7 +151,7 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
                 dollarBar.net === 0 ? styles.dollarEven : styles.dollarUp,
               ]}
             >
-              {dollarBar.net === 0 ? 'EVEN' : `${dollarBar.leader} +$${Math.abs(dollarBar.net)}`}
+              {dollarBar.net === 0 ? 'EVEN' : `${dollarBar.leader} +$${Math.round(Math.abs(dollarBar.net))}`}
             </Text>
           )}
         </View>
@@ -173,7 +176,7 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
               const pressStatus = getStatusLabel(pr.result, pr.holesPlayed, pressMaxHoles);
               return (
                 <View key={i} style={styles.pressRow}>
-                  <Text style={styles.pressLabel}>🔁 Press H{p.startHole}–{p.endHole} (${p.stake})</Text>
+                  <Text style={styles.pressLabel}>🔁 Press H{p.startHole}–{p.endHole} (${Math.round(p.stake)})</Text>
                   <Text style={[styles.pressResult, pr.result === 0 ? styles.dollarEven : styles.dollarUp]}>
                     {pr.result === 0 ? 'AS' : `${Math.abs(pr.result)}↑ ${pressStatus}`}
                   </Text>
@@ -202,7 +205,7 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
         <Text style={styles.matchTitle}>SKINS · THRU {holesPlayed}</Text>
         {currentCarry > 0 && (
           <View style={styles.hotPotBadge}>
-            <Text style={styles.hotPotText}>🔥 ${hotPot} ON THIS HOLE</Text>
+            <Text style={styles.hotPotText}>🔥 ${Math.round(hotPot)} ON THIS HOLE</Text>
           </View>
         )}
       </View>
@@ -211,7 +214,7 @@ export function ScoreboardPanel({ round, scores, hcps, currentHole, holes, first
           const firstName = p.name?.split(' ')[0] ?? p.initials ?? '?';
           const skinAmt = skinsWon[p.id] * perSkin;
           const sbAmt = sideBetNet ? (sideBetNet[p.id] ?? 0) : 0;
-          const totalAmt = skinAmt + sbAmt;
+          const totalAmt = Math.round(skinAmt + sbAmt);
           const allTotals = round.players.map((q) => skinsWon[q.id] * perSkin + (sideBetNet ? (sideBetNet[q.id] ?? 0) : 0));
           const maxSkinAmt = Math.max(...allTotals);
           const minSkinAmt = Math.min(...allTotals);

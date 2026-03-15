@@ -142,7 +142,11 @@ export default function HoleScreen() {
   const currentSb = popup?.bets[popup.index];
   const sbType = currentSb ? SIDE_BET_TYPES.find((t) => t.id === currentSb.type) : null;
   const numPlayers = round.players?.length ?? storePlayers?.length ?? 0;
-  const winnerReceives = currentSb ? currentSb.amount * Math.max(0, numPlayers - 1) : 0;
+  const is2v2 = round.gameStyle === 'matchplay' && numPlayers === 4 &&
+    round.teams?.[0]?.playerIds?.length === 2 && round.teams?.[1]?.playerIds?.length === 2;
+  const winnerReceives = currentSb
+    ? (is2v2 ? currentSb.amount * 2 : currentSb.amount * Math.max(0, numPlayers - 1))
+    : 0;
 
   const chosenWinner = currentSb ? sideBetWinners[currentSb.id] : undefined;
   const winnerPlayer = chosenWinner ? round.players.find((p) => p.id === chosenWinner) : null;
@@ -213,8 +217,9 @@ export default function HoleScreen() {
             {sideBetsHere
               .map((sb) => {
                 const t = SIDE_BET_TYPES.find((x) => x.id === sb.type);
-                const wr = sb.amount * (round.players.length - 1);
-                return `${t?.label} · winner gets $${wr}`;
+                const wr = is2v2 ? sb.amount * 2 : sb.amount * (round.players.length - 1);
+                const label = is2v2 ? 'Winning team gets' : 'Winner gets';
+                return `${t?.label} · ${label} $${wr}`;
               })
               .join('  ·  ')}
           </Text>
@@ -395,7 +400,7 @@ export default function HoleScreen() {
                     <Text style={styles.modalEmoji}>🏅</Text>
                     <Text style={styles.modalSubtitle}>SIDE BET — HOLE {popup.nextHole}</Text>
                     <Text style={styles.modalTitle}>{sbType.label}</Text>
-                    <Text style={styles.modalPot}>Winner gets ${winnerReceives}</Text>
+                    <Text style={styles.modalPot}>{is2v2 ? 'Winning team gets' : 'Winner gets'} ${winnerReceives}</Text>
                     <Pressable style={styles.modalPrimaryBtn} onPress={advanceOrClose}>
                       <Text style={styles.modalPrimaryBtnText}>Got it — tee off 🏌️</Text>
                     </Pressable>

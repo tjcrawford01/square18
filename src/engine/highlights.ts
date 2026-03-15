@@ -48,9 +48,9 @@ export function getBiggestMoment(
   }
   if (!best) return null;
   return {
-    label: `Biggest Moment ${best.relToPar === 2 ? '🦅' : '🐦'}`,
+    label: 'Biggest Moment 🔥',
     detail: `${best.player.name} • ${best.desc} on ${best.hole}`,
-    emoji: best.relToPar === 2 ? '🦅' : '🐦',
+    emoji: '🔥',
   };
 }
 

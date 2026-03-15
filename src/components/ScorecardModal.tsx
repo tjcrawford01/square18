@@ -137,11 +137,11 @@ export function ScorecardModal({
           <Text style={[styles.cell, styles.cellHole, styles.headerCell]}>Hole</Text>
           <Text style={[styles.cell, styles.cellNarrow, styles.headerCell]}>Par</Text>
           <Text style={[styles.cell, styles.cellNarrow, styles.headerCell]}>SI</Text>
-          {players.map((p) => (
-            <Text key={p.id} style={[styles.cell, styles.cellPlayer, styles.headerCell]} numberOfLines={1}>
-              {p.id === players[0].id ? 'You' : p.name}
-            </Text>
-          ))}
+            {players.map((p) => (
+              <Text key={p.id} style={[styles.cell, styles.cellPlayer, styles.headerCell, styles.headerPlayerCenter]} numberOfLines={1}>
+                {p.name}
+              </Text>
+            ))}
         </View>
         {slice.map((h) => (
           <View key={h.hole} style={styles.tableRow}>
@@ -284,6 +284,7 @@ const styles = StyleSheet.create({
   cellHole: { width: 38, color: Colors.ink },
   cellNarrow: { width: 28, textAlign: 'center' as const },
   headerCell: { color: Colors.cream },
+  headerPlayerCenter: { flex: 1, textAlign: 'center' as const },
   cellPlayer: {
     flex: 1,
     flexDirection: 'row',

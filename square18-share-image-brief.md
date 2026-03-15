@@ -53,7 +53,7 @@ Up to 3 highlight cards, each showing:
 
 Highlight types (compute from round data):
 
-1. **Biggest Moment 🦅**
+1. **Biggest Moment 🔥**
    - Find the best gross score relative to par across all players and holes
    - Eagle = "Eagle on [Hole #]" (priority)
    - Birdie = "Birdie on [Hole #]"

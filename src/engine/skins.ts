@@ -38,3 +38,36 @@ export function computeSkins(scores: Scores, hcps: Handicaps, playerIds: number[
   return results;
 }
 
+/**
+ * Compute net skins settlement per player using pairwise differentials (same as 5-3-1).
+ * For every pair of players, the one with fewer skins pays the one with more skins:
+ * payment = (skinsA - skinsB) × stake (positive = B pays A, negative = A pays B).
+ * Unresolved carry-overs: excluded from counts (no winner), stakes effectively returned.
+ */
+export function computeSkinsNet(
+  skinsWon: Record<number, number>,
+  playerIds: number[],
+  stake: number,
+): Record<number, number> {
+  const netPerPlayer: Record<number, number> = {};
+  playerIds.forEach((id) => (netPerPlayer[id] = 0));
+
+  for (let i = 0; i < playerIds.length; i++) {
+    for (let j = i + 1; j < playerIds.length; j++) {
+      const idA = playerIds[i]!;
+      const idB = playerIds[j]!;
+      const diff = skinsWon[idA]! - skinsWon[idB]!;
+      const amt = Math.round(Math.abs(diff) * stake);
+      if (diff > 0) {
+        netPerPlayer[idA] = (netPerPlayer[idA] ?? 0) + amt;
+        netPerPlayer[idB] = (netPerPlayer[idB] ?? 0) - amt;
+      } else if (diff < 0) {
+        netPerPlayer[idB] = (netPerPlayer[idB] ?? 0) + amt;
+        netPerPlayer[idA] = (netPerPlayer[idA] ?? 0) - amt;
+      }
+    }
+  }
+
+  return netPerPlayer;
+}
+

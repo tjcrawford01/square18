@@ -159,7 +159,7 @@ export function buildSettlementText(
       .sort((a, b) => b.points - a.points)
       .forEach((r) => {
         const p = round.players.find((x) => x.id === r.playerId);
-        const name = p && p.id === scorekeeperId ? 'YOU' : p?.name?.toUpperCase() ?? '';
+        const name = p?.name?.toUpperCase() ?? '';
         lines.push(`${name}:   ${r.points} pts`);
       });
     lines.push('');
@@ -176,18 +176,26 @@ export function buildSettlementText(
       settlement.back.result > 0 ? t1 : settlement.back.result < 0 ? t2 : 'Tied';
     const overallWinner =
       settlement.total.result > 0 ? t1 : settlement.total.result < 0 ? t2 : 'Tied';
+    const is2v2 = round.gameStyle === 'matchplay' && round.players.length === 4 &&
+      round.teams?.[0]?.playerIds?.length === 2 && round.teams?.[1]?.playerIds?.length === 2;
+    const winVerb = is2v2 ? 'win' : 'wins';
+    const matchMult = is2v2 ? 2 : 1;
+    const fAmt = settlement.front.result === 0 ? 0 : Math.abs(settlement.fAmt) * matchMult;
+    const bAmt = settlement.back.result === 0 ? 0 : Math.abs(settlement.bAmt) * matchMult;
+    const tAmt = settlement.total.result === 0 ? 0 : Math.abs(settlement.tAmt) * matchMult;
     lines.push(
-      `Front 9:  ${frontWinner}${frontWinner === 'Tied' ? ' Tied' : ` wins $${Math.abs(settlement.fAmt)}`}`,
+      `Front 9:  ${frontWinner}${frontWinner === 'Tied' ? ' Tied' : ` ${winVerb} $${fAmt}`}`,
     );
     lines.push(
-      `Back 9:   ${backWinner === 'Tied' ? 'Tied' : backWinner + ` wins $${Math.abs(settlement.bAmt)}`}`,
+      `Back 9:   ${backWinner === 'Tied' ? 'Tied' : backWinner + ` ${winVerb} $${bAmt}`}`,
     );
     lines.push(
-      `Overall:  ${overallWinner === 'Tied' ? 'Tied' : overallWinner + ` wins $${Math.abs(settlement.tAmt)}`}`,
+      `Overall:  ${overallWinner === 'Tied' ? 'Tied' : overallWinner + ` ${winVerb} $${tAmt}`}`,
     );
-    settlement.pressDetails.forEach((p) => {
-      const winner = p.result > 0 ? t1 : p.result < 0 ? t2 : 'Tied';
-      lines.push(`🔁 Press H${p.startHole}-${p.endHole ?? p.startHole}: ${winner}${p.result === 0 ? ' Tied' : ` wins $${Math.abs(p.amt)}`}`);
+    settlement.pressDetails.forEach((pr) => {
+      const winner = pr.result > 0 ? t1 : pr.result < 0 ? t2 : 'Tied';
+      const pressAmt = pr.result === 0 ? 0 : Math.abs(pr.amt) * matchMult;
+      lines.push(`🔁 Press H${pr.startHole}-${pr.endHole ?? pr.startHole}: ${winner}${pr.result === 0 ? ' Tied' : ` ${winVerb} $${pressAmt}`}`);
     });
     round.sideBets
       .filter((sb) => sb.type !== 'birdie' && sideBetWinners[sb.id] != null)
@@ -195,16 +203,25 @@ export function buildSettlementText(
         const type = SIDE_BET_TYPES.find((t) => t.id === sb.type);
         const winnerId = sideBetWinners[sb.id];
         const winner = winnerId ? round.players.find((x) => x.id === winnerId) : null;
+        const winnerTeam = winnerId && is2v2 ? round.teams.find((t) => t.playerIds.includes(winnerId)) : null;
         const label = type?.label ?? sb.type;
         const holeSuffix = sb.hole != null ? ` H${sb.hole}` : '';
-        const amt = sb.amount * (round.players.length - 1);
-        lines.push(`🏅 ${label}${holeSuffix}: ${winner?.name ?? '?'} wins $${amt}`);
+        const amt = is2v2 && winnerTeam
+          ? sb.amount * (round.players.length - winnerTeam.playerIds.length)
+          : sb.amount * (round.players.length - 1);
+        const winnerLabel = is2v2 && winnerTeam ? teamName(round, winnerTeam.playerIds) : (winner?.name ?? '?');
+        const sbWinVerb = is2v2 && winnerTeam ? 'win' : 'wins';
+        lines.push(`🏅 ${label}${holeSuffix}: ${winnerLabel} ${sbWinVerb} $${amt}`);
       });
     const bpResult = options.birdiePoolResult;
     const bp = round.sideBets.find((sb) => sb.type === 'birdie');
     if (bp && bpResult) {
       if (bpResult.winnerIds.length === 0) {
-        lines.push('🏅 Birdie Pool: no birdies 🕳️');
+        lines.push(bpResult.birdieCount > 0 && is2v2 ? '🏅 Birdie Pool: Tied' : '🏅 Birdie Pool: no birdies 🕳️');
+      } else if (is2v2 && round.teams.some((t) => bpResult!.winnerIds.every((id) => t.playerIds.includes(id)))) {
+        const winnerTeam = round.teams.find((t) => bpResult!.winnerIds.every((id) => t.playerIds.includes(id)));
+        const amt = bp.amount;
+        lines.push(`🏅 Birdie Pool: ${winnerTeam ? teamName(round, winnerTeam.playerIds) : '?'} win $${amt}`);
       } else if (bpResult.winnerIds.length === 1) {
         const winner = round.players.find((x) => x.id === bpResult!.winnerIds[0]);
         const amt = bp.amount * (round.players.length - 1);
@@ -216,13 +233,36 @@ export function buildSettlementText(
         lines.push(`🏅 Birdie Pool: ${names} split $${perWinner} each`);
       }
     }
-    const t1Ids = round.teams[0].playerIds;
-    const t2Ids = round.teams[1].playerIds;
-    const t1Net = t1Ids.reduce((s, id) => s + (netPerPlayer[id] ?? 0), 0);
-    const totalAmt = Math.round(Math.abs(t1Net));
-    const totalWinner = t1Net > 0 ? t1 : t1Net < 0 ? t2 : 'All Square';
+    // Total = sum of displayed row amounts (match × matchMult + side bets + birdie pool)
+    let displayedTotal = 0;
+    displayedTotal += Math.sign(settlement.front.result) * fAmt;
+    displayedTotal += Math.sign(settlement.back.result) * bAmt;
+    displayedTotal += Math.sign(settlement.total.result) * tAmt;
+    settlement.pressDetails.forEach((pr) => {
+      displayedTotal += Math.sign(pr.result) * (pr.result === 0 ? 0 : Math.abs(pr.amt) * matchMult);
+    });
+    round.sideBets
+      .filter((sb) => sb.type !== 'birdie' && sideBetWinners[sb.id] != null)
+      .forEach((sb) => {
+        const winnerId = sideBetWinners[sb.id];
+        const winnerTeam = winnerId && is2v2 ? round.teams.find((t) => t.playerIds.includes(winnerId)) : null;
+        const sbAmt = is2v2 && winnerTeam
+          ? sb.amount * (round.players.length - winnerTeam.playerIds.length)
+          : sb.amount * (round.players.length - 1);
+        const t1WonSb = winnerTeam === round.teams[0];
+        displayedTotal += winnerTeam ? (t1WonSb ? sbAmt : -sbAmt) : 0;
+      });
+    if (bp && bpResult && bpResult.winnerIds.length > 0) {
+      const bpTeamWin = is2v2 && round.teams.some((t) => bpResult!.winnerIds.every((id) => t.playerIds.includes(id)));
+      // Match displayed amount: 2v2 team win shows bp.amount (per-person), else team total
+      const bpAmt = bpTeamWin ? bp.amount : bp.amount * (round.players.length - bpResult.winnerIds.length);
+      const t1WonBp = bpTeamWin && round.teams.find((t) => bpResult!.winnerIds.every((id) => t.playerIds.includes(id))) === round.teams[0];
+      displayedTotal += bpTeamWin ? (t1WonBp ? bpAmt : -bpAmt) : 0;
+    }
+    const totalAmt = Math.round(Math.abs(displayedTotal));
+    const totalWinner = displayedTotal > 0 ? t1 : displayedTotal < 0 ? t2 : 'All Square';
     lines.push('');
-    lines.push(t1Net !== 0 ? `${totalWinner} wins $${totalAmt}` : 'All Square');
+    lines.push(displayedTotal !== 0 ? `${totalWinner} ${is2v2 ? 'win' : 'wins'} $${totalAmt}` : 'All Square');
   }
 
   if (round.gameStyle === 'wolf' && Object.keys(wolfNet).length > 0) {
@@ -231,8 +271,7 @@ export function buildSettlementText(
       .sort((a, b) => (wolfNet[b.id] ?? 0) - (wolfNet[a.id] ?? 0))
       .forEach((p) => {
         const net = Math.round(wolfNet[p.id] ?? 0);
-        const name = p.id === scorekeeperId ? 'You' : p.name;
-        const line = net >= 0 ? `${name}: +$${net}` : `${name}: -$${Math.abs(net)}`;
+        const line = net >= 0 ? `${p.name}: +$${net}` : `${p.name}: -$${Math.abs(net)}`;
         lines.push(line);
       });
     lines.push('');
@@ -246,56 +285,28 @@ export function buildSettlementText(
       .forEach((p) => {
         const won = skinsSettlement.skinsWon[p.id];
         const amt = won * skinsSettlement.perSkin;
-        const name = p.id === scorekeeperId ? 'You' : p.name;
-        lines.push(`${name}: ${won} skin${won !== 1 ? 's' : ''} = $${amt}`);
+        lines.push(`${p.name}: ${won} skin${won !== 1 ? 's' : ''} = $${amt}`);
       });
   }
 
   lines.push('');
   lines.push('SETTLE UP');
   const transactions = minTransactions(netPerPlayer);
-  if (round.players.length === 2) {
-    if (transactions.length === 0) {
-      lines.push('Everyone is square. 🤝');
-    } else {
-      transactions.forEach((tx) => {
-        const fromName = round.players.find((x) => x.id === tx.fromId);
-        const toName = round.players.find((x) => x.id === tx.toId);
-        const fromLabel = fromName?.name ?? '';
-        const toLabel = toName && toName.id === scorekeeperId ? 'you' : toName?.name ?? '';
-        const link = venmoWebLink(toName?.venmo);
-        if (fromName?.id === scorekeeperId) {
-          lines.push(`You owe ${toLabel} $${tx.amount}${link ? ` → ${link}` : ''}`);
-        } else {
-          lines.push(`${fromLabel} owes you $${tx.amount}${link ? ` → ${link}` : ''}`);
-        }
-      });
-    }
+  if (transactions.length === 0) {
+    lines.push('Everyone is square. 🤝');
   } else {
-    round.players.forEach((p) => {
-      const net = Math.round(netPerPlayer[p.id] ?? 0);
-      const name = p.id === scorekeeperId ? 'You' : p.name;
-      const line = net >= 0 ? `${name}: +$${net}` : `${name}: -$${Math.abs(net)}`;
-      lines.push(line);
+    transactions.forEach((tx) => {
+      const fromName = round.players.find((x) => x.id === tx.fromId);
+      const toName = round.players.find((x) => x.id === tx.toId);
+      const fromLabel = fromName?.name ?? '?';
+      const toLabel = toName?.name ?? '?';
+      const link = venmoWebLink(toName?.venmo);
+      lines.push(`${fromLabel} pays ${toLabel} $${tx.amount}${link ? ` → ${link}` : ''}`);
     });
-    lines.push('');
-    lines.push('Pay these amounts (min transfers):');
-    lines.push('');
-    if (transactions.length === 0) {
-      lines.push('Everyone is square. 🤝');
-    } else {
-      transactions.forEach((tx) => {
-        const fromName = round.players.find((x) => x.id === tx.fromId);
-        const toName = round.players.find((x) => x.id === tx.toId);
-        const fromLabel = fromName && fromName.id === scorekeeperId ? 'You' : fromName?.name ?? '';
-        const toLabel = toName && toName.id === scorekeeperId ? 'You' : toName?.name ?? '';
-        lines.push(`${fromLabel} pays ${toLabel} $${tx.amount}`);
-      });
-    }
   }
 
   const highlightEmoji: Record<string, string> = {
-    'Biggest Moment': '📣',
+    'Biggest Moment': '🔥',
     'Biggest Choke': '💀',
     'Momentum Swing': '⚡',
   };
@@ -341,7 +352,7 @@ export function buildScorecardShareText(input: ScorecardShareInput): string {
     round.gameStyle === 'matchplay' ? 'Match Play' : round.gameStyle === 'fivethreeone' ? '5-3-1' : 'Skins';
   const dateStr = scorecardDate();
   const courseName = input.courseName ?? 'Course';
-  const headerNames = ['PAR', ...players.map((p) => (p.id === players[0].id ? 'YOU' : p.name.toUpperCase()))];
+  const headerNames = ['PAR', ...players.map((p) => p.name.toUpperCase())];
   const colWidths = [4, 5, ...players.map(() => 5)];
   const pad = (s: string, i: number) => s.padStart(colWidths[i] ?? 5);
 
