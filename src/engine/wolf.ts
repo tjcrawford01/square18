@@ -11,6 +11,8 @@ export interface WolfDecision {
   wolfIndex: number;
   partnerId: number | null;
   isBlind: boolean;
+  /** Set when hole is halved (both teams same net score); no money changes hands */
+  tied?: boolean;
 }
 
 export type WolfDecisions = Record<number, WolfDecision>;
@@ -59,7 +61,9 @@ export function calculateWolf(
     if (nets.some((n) => n.net === Infinity)) continue;
 
     const isLoneWolf = decision.partnerId == null;
-    const effectiveStake = decision.isBlind ? stake * 2 : stake;
+    const effectiveStake = decision.isBlind ? stake * 3 : stake;
+
+    if (decision.tied) continue;
 
     if (isLoneWolf) {
       const wolfNet = nets.find((n) => n.id === wolfId)?.net ?? Infinity;
@@ -74,6 +78,7 @@ export function calculateWolf(
         netPerPlayer[wolfId] -= others.length * effectiveStake;
         others.forEach((p) => (netPerPlayer[p.id] += effectiveStake));
       }
+      // wolfTied: no money changes hands
     } else {
       const wolfTeam = [wolfId, decision.partnerId];
       const oppTeam = players.filter((p) => !wolfTeam.includes(p.id)).map((p) => p.id);
@@ -87,8 +92,45 @@ export function calculateWolf(
         oppTeam.forEach((id) => (netPerPlayer[id] += wolfTeam.length * effectiveStake));
         wolfTeam.forEach((id) => (netPerPlayer[id] -= effectiveStake * oppTeam.length));
       }
+      // wolfBest === oppBest: tied, no money changes hands
     }
   }
 
   return netPerPlayer;
+}
+
+/**
+ * Check if a Wolf hole is tied (both teams have the same best net score).
+ * Call when all scores are in for the hole.
+ */
+export function isWolfHoleTied(
+  players: PlayerLike[],
+  scores: Record<number, Record<number, number>>,
+  decision: WolfDecision,
+  holeNum: number,
+  hcps: Record<number, number>,
+  holeInfo: HoleInfo
+): boolean {
+  const wolfId = players[decision.wolfIndex]?.id;
+  if (wolfId == null) return false;
+
+  const nets = players.map((p) => ({
+    id: p.id,
+    net: scores[p.id]?.[holeNum] != null ? netScore(scores[p.id][holeNum], hcps[p.id] ?? 0, holeInfo.si) : Infinity,
+  }));
+  if (nets.some((n) => n.net === Infinity)) return false;
+
+  const isLoneWolf = decision.partnerId == null;
+  if (isLoneWolf) {
+    const wolfNet = nets.find((n) => n.id === wolfId)?.net ?? Infinity;
+    const wolfWon = nets.every((n) => n.id === wolfId || n.net > wolfNet);
+    const wolfLost = nets.some((n) => n.id !== wolfId && n.net < wolfNet);
+    return !wolfWon && !wolfLost;
+  }
+
+  const wolfTeam = [wolfId, decision.partnerId];
+  const oppTeam = players.filter((p) => !wolfTeam.includes(p.id)).map((p) => p.id);
+  const wolfBest = Math.min(...wolfTeam.map((id) => nets.find((n) => n.id === id)?.net ?? Infinity));
+  const oppBest = Math.min(...oppTeam.map((id) => nets.find((n) => n.id === id)?.net ?? Infinity));
+  return wolfBest === oppBest;
 }

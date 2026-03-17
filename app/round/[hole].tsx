@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useRoundStore, dedupeSideBets } from '../../src/store/roundStore';
@@ -8,7 +8,7 @@ import { SIDE_BET_TYPES } from '../../src/data/sideBetTypes';
 import { courseHandicap, playingHandicaps, strokesOnHole } from '../../src/engine/handicap';
 import { computeSkins } from '../../src/engine/skins';
 import { computeFiveThreeOne } from '../../src/engine/fiveThreeOne';
-import { getWolfIndexForHole } from '../../src/engine/wolf';
+import { getWolfIndexForHole, isWolfHoleTied } from '../../src/engine/wolf';
 import { Card } from '../../src/components/Card';
 import { SectionLabel } from '../../src/components/SectionLabel';
 import { ScoreboardPanel } from '../../src/components/ScoreboardPanel';
@@ -34,6 +34,7 @@ export default function HoleScreen() {
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [scorecardVisible, setScorecardVisible] = useState(false);
   const [wolfPickerVisible, setWolfPickerVisible] = useState(false);
+  const [wolfPickerStep, setWolfPickerStep] = useState(0);
   const hole1ReminderShown = useRef(false);
 
   const isWolf = round.gameStyle === 'wolf';
@@ -45,11 +46,32 @@ export default function HoleScreen() {
     setCurrentHole(holeNum);
   }, [holeNum, setCurrentHole]);
 
+  const opponentsInTeeOrder = useMemo(() => {
+    if (!round.players?.length || wolfPlayer == null) return [];
+    const n = round.players.length;
+    return [...Array(n - 1)].map((_, i) => round.players[(wolfIndex + 1 + i) % n]);
+  }, [round.players, wolfIndex, wolfPlayer]);
+
   useEffect(() => {
     if (isWolf && !wolfDecision && wolfPlayer) {
       setWolfPickerVisible(true);
+      setWolfPickerStep(0);
     }
   }, [isWolf, holeNum, wolfDecision, wolfPlayer]);
+
+  useEffect(() => {
+    if (wolfPickerVisible && wolfPickerStep >= 1 && wolfPickerStep > opponentsInTeeOrder.length) {
+      setWolfDecision(holeNum, { wolfIndex, partnerId: null, isBlind: false });
+      setWolfPickerVisible(false);
+    }
+  }, [wolfPickerVisible, wolfPickerStep, opponentsInTeeOrder.length, holeNum, wolfIndex, setWolfDecision]);
+
+  useEffect(() => {
+    if (allScored && wolfDecision && !wolfDecision.tied && isWolf && hd) {
+      const tied = isWolfHoleTied(round.players, scores, wolfDecision, holeNum, hcps, hd);
+      if (tied) setWolfDecision(holeNum, { ...wolfDecision, tied: true });
+    }
+  }, [allScored, wolfDecision, holeNum, isWolf, round.players, scores, hcps, hd, setWolfDecision]);
 
   useEffect(() => {
     if (holeNum === 1 && !hole1ReminderShown.current) {
@@ -155,7 +177,7 @@ export default function HoleScreen() {
     <View style={styles.container}>
       {isWolf && wolfPlayer && (
         <View style={styles.wolfBanner}>
-          <Text style={styles.wolfBannerText}>🐺 Wolf: {wolfPlayer.name}</Text>
+          <Text style={styles.wolfBannerText}>🐺 {wolfPlayer.name} is the Wolf — tees off first</Text>
         </View>
       )}
       <View style={styles.header}>
@@ -354,39 +376,54 @@ export default function HoleScreen() {
             <Text style={styles.modalEmoji}>🐺</Text>
             <Text style={styles.modalSubtitle}>HOLE {holeNum}</Text>
             <Text style={styles.modalTitle}>You are the Wolf on this hole, {wolfPlayer?.name}</Text>
-            <Text style={styles.modalPot}>Pick a partner or go alone</Text>
-            {round.players
-              .filter((p) => p.id !== wolfPlayer?.id)
-              .map((p) => (
+            {wolfPickerStep === 0 ? (
+              <>
+                <Text style={styles.wolfStep0Subtitle}>Before anyone tees off — declare now or wait and see</Text>
                 <Pressable
-                  key={p.id}
-                  style={styles.winnerBtn}
+                  style={styles.wolfBlindBtn}
                   onPress={() => {
-                    setWolfDecision(holeNum, { wolfIndex, partnerId: p.id, isBlind: false });
+                    setWolfDecision(holeNum, { wolfIndex, partnerId: null, isBlind: true });
                     setWolfPickerVisible(false);
                   }}
                 >
-                  <Text style={styles.winnerBtnText}>Pick {p.name}</Text>
+                  <Text style={styles.wolfBlindBtnText}>Declare Blind Wolf 🐺🐺</Text>
                 </Pressable>
-              ))}
-            <Pressable
-              style={styles.wolfLoneBtn}
-              onPress={() => {
-                setWolfDecision(holeNum, { wolfIndex, partnerId: null, isBlind: false });
-                setWolfPickerVisible(false);
-              }}
-            >
-              <Text style={styles.winnerBtnText}>Lone Wolf 🐺</Text>
-            </Pressable>
-            <Pressable
-              style={styles.wolfBlindBtn}
-              onPress={() => {
-                setWolfDecision(holeNum, { wolfIndex, partnerId: null, isBlind: true });
-                setWolfPickerVisible(false);
-              }}
-            >
-              <Text style={styles.winnerBtnText}>Blind Wolf 🐺🐺</Text>
-            </Pressable>
+                <Pressable
+                  style={styles.wolfWaitBtn}
+                  onPress={() => setWolfPickerStep(1)}
+                >
+                  <Text style={styles.wolfWaitBtnText}>I'll wait and see</Text>
+                </Pressable>
+              </>
+            ) : wolfPickerStep <= opponentsInTeeOrder.length ? (
+              <>
+                <Text style={styles.wolfPickerPrompt}>
+                  {opponentsInTeeOrder[wolfPickerStep - 1]?.name} teed off — pick {opponentsInTeeOrder[wolfPickerStep - 1]?.name} as partner?
+                </Text>
+                <View style={styles.wolfPickerRow}>
+                  <Pressable
+                    style={[styles.winnerBtn, styles.wolfPickBtn]}
+                    onPress={() => {
+                      const p = opponentsInTeeOrder[wolfPickerStep - 1];
+                      if (p) {
+                        setWolfDecision(holeNum, { wolfIndex, partnerId: p.id, isBlind: false });
+                        setWolfPickerVisible(false);
+                      }
+                    }}
+                  >
+                    <Text style={styles.winnerBtnText}>Pick</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.wolfPassBtn]}
+                    onPress={() => setWolfPickerStep((s) => s + 1)}
+                  >
+                    <Text style={styles.wolfPassBtnText}>Pass</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <Text style={styles.wolfPickerPrompt}>All passed — Lone Wolf!</Text>
+            )}
           </View>
         </Pressable>
       </Modal>
@@ -548,14 +585,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  wolfStep0Subtitle: {
+    color: Colors.cream,
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
   wolfBlindBtn: {
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 10,
+    backgroundColor: Colors.gold,
+    alignItems: 'center',
+    borderBottomWidth: 3,
+    borderBottomColor: '#8a6a20',
+  },
+  wolfBlindBtnText: { fontSize: 16, fontWeight: '700', color: Colors.ink },
+  wolfWaitBtn: {
     width: '100%',
     paddingVertical: 14,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: Colors.red,
+    borderColor: Colors.gold,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  wolfWaitBtnText: { fontSize: 14, fontWeight: '700', color: Colors.cream },
+  wolfPickerPrompt: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.cream,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  wolfPickerRow: { flexDirection: 'row', gap: 12, width: '100%' },
+  wolfPickBtn: { flex: 1, minWidth: 0, paddingVertical: 14, marginBottom: 0 },
+  wolfPassBtn: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: Colors.grayLight,
     alignItems: 'center',
   },
+  wolfPassBtnText: { fontSize: 14, fontWeight: '700', color: Colors.cream },
   scroll: { flex: 1 },
   scrollContent: { padding: 14, paddingHorizontal: 20 },
   scoreCard: { marginBottom: 10 },

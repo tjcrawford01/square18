@@ -197,33 +197,32 @@ export function GameRulesModal({ visible, onClose }: GameRulesModalProps) {
                 <Text style={{ fontWeight: '700' }}>The Hunt</Text>
               </Text>
               <Text style={accordionStyles.bodyText}>
-                One player per hole is the Wolf. The Wolf watches each opponent tee off and decides whether to take them as a partner — or go it alone against everyone.
+                One player per hole is the Wolf. The Wolf tees off first, then watches each opponent tee off in order and decides whether to take them as a partner — or go it alone against everyone.
               </Text>
+              <Text style={accordionStyles.bodySubhead}>Tee Order</Text>
+              <Text style={accordionStyles.bodyText}>• The Wolf always tees off first on each Wolf hole</Text>
+              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Remaining players tee off in rotation order after the Wolf</Text>
               <Text style={accordionStyles.bodySubhead}>How It Works</Text>
               <Text style={accordionStyles.bodyText}>• 3 or 4 players</Text>
               <Text style={accordionStyles.bodyText}>• Players rotate as Wolf each hole in fixed order (Player 1 on hole 1, Player 2 on hole 2, etc.)</Text>
-              <Text style={accordionStyles.bodyText}>• The Wolf watches each player tee off in order and must decide immediately after each shot: pick this player as partner, or pass</Text>
+              <Text style={accordionStyles.bodyText}>• The Wolf watches each player tee off one at a time and must decide immediately after each shot: pick this player as partner, or pass</Text>
               <Text style={accordionStyles.bodyText}>• Once you pass a player, you cannot go back</Text>
-              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• If the Wolf hasn't picked anyone after all others have hit, they automatically become Lone Wolf</Text>
+              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• If the Wolf passes on everyone, they automatically become Lone Wolf</Text>
               <Text style={accordionStyles.bodySubhead}>Teams</Text>
               <Text style={accordionStyles.bodyText}>• Wolf + Partner vs. remaining players (best ball on each side)</Text>
               <Text style={accordionStyles.bodyText}>• Winning team has the lower net best ball score</Text>
               <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Ties: hole is halved, no money changes hands</Text>
-              <Text style={accordionStyles.bodySubhead}>Lone Wolf</Text>
-              <Text style={accordionStyles.bodyText}>Wolf plays solo against all other players. Higher risk, higher reward.</Text>
-              <Text style={accordionStyles.bodyText}>• Lone Wolf wins: collects stake from every other player</Text>
-              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Lone Wolf loses: pays every other player</Text>
-              <Text style={accordionStyles.bodySubhead}>Blind Wolf</Text>
-              <Text style={accordionStyles.bodyText}>Wolf declares before anyone tees off. Automatically Lone Wolf with doubled stakes.</Text>
-              <Text style={accordionStyles.bodyText}>• Blind Wolf wins: collects 2x stake from every other player</Text>
-              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Blind Wolf loses: pays 2x stake to every other player</Text>
-              <Text style={accordionStyles.bodySubhead}>Stakes</Text>
-              <Text style={accordionStyles.bodyText}>Set a dollar amount per hole.</Text>
-              <Text style={accordionStyles.bodyText}>Example with $2/hole and 4 players:</Text>
-              <Text style={accordionStyles.bodyText}>• Wolf + Partner win: Wolf collects $2 from each loser, Partner collects $2 from each loser</Text>
+              <Text style={accordionStyles.bodySubhead}>Lone Wolf vs Blind Lone Wolf</Text>
+              <Text style={accordionStyles.bodyText}>• Lone Wolf: Wolf plays solo after passing on all partners. Collects or pays 1× stake per opponent.</Text>
+              <Text style={accordionStyles.bodyText}>• Blind Lone Wolf: Wolf declares before anyone tees off. Automatically solo with 3× stakes.</Text>
+              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Blind Wolf is higher risk, higher reward — triple the stake in both directions</Text>
+              <Text style={accordionStyles.bodySubhead}>Scoring Table (4 players, $2/hole)</Text>
+              <Text style={accordionStyles.bodyText}>• Wolf + Partner win: Wolf & Partner each collect $2 from each opponent</Text>
+              <Text style={accordionStyles.bodyText}>• Wolf + Partner lose: Wolf & Partner each pay $2 to each opponent</Text>
               <Text style={accordionStyles.bodyText}>• Lone Wolf wins: Wolf collects $2 from all 3 others = $6</Text>
               <Text style={accordionStyles.bodyText}>• Lone Wolf loses: Wolf pays $2 to all 3 others = -$6</Text>
-              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Blind Wolf wins: Wolf collects $4 from all 3 others = $12</Text>
+              <Text style={accordionStyles.bodyText}>• Blind Wolf wins: Wolf collects $6 from all 3 others = $18 (3× stake)</Text>
+              <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>• Blind Wolf loses: Wolf pays $6 to all 3 others = -$18 (3× stake)</Text>
               <Text style={accordionStyles.bodySubhead}>Handicaps</Text>
               <Text style={[accordionStyles.bodyText, accordionStyles.bodyTextLast]}>
                 Net scores are used. Full handicap applied.

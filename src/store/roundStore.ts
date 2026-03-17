@@ -37,6 +37,8 @@ export interface WolfDecision {
   wolfIndex: number;
   partnerId: number | null;
   isBlind: boolean;
+  /** Set when hole is halved (both teams same net score); no money changes hands */
+  tied?: boolean;
 }
 
 export type WolfDecisions = Record<number, WolfDecision>;
